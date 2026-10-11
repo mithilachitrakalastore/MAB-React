@@ -117,6 +117,7 @@ export const SellerPanel = ({ currentUser }) => {
         product_code: '',
         key_features: '',
         price: 0,
+        advance_percentage: 0,
         compare_price: 0,
         image: '',
         images: [],
@@ -382,6 +383,7 @@ export const SellerPanel = ({ currentUser }) => {
             product_code: '',
             key_features: '',
             price: 0,
+            advance_percentage: 0,
             compare_price: 0,
             image: '',
             images: [],
@@ -415,6 +417,7 @@ export const SellerPanel = ({ currentUser }) => {
             product_code: product.product_code || '',
             key_features: product.key_features || '',
             price: product.price || 0,
+            advance_percentage: product.advance_percentage || 0,
             compare_price: product.compare_price || 0,
             image: product.image || '',
             images: Array.isArray(product.images) ? product.images : [],
@@ -2119,6 +2122,21 @@ export const SellerPanel = ({ currentUser }) => {
                                                     className="w-full rounded-2xl border border-stone-200 bg-[#f9f7f3] px-4 py-3 text-sm outline-none transition-all focus:border-[#5c1111] focus:ring-2 focus:ring-[#5c1111]/10"
                                                     placeholder="0"
                                                 />
+                                            </div>
+
+                                            <div>
+                                                <label className="mb-2 block text-[10px] font-black uppercase tracking-[0.22em] text-stone-400">Advance payment (%)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    max="100"
+                                                    step="0.01"
+                                                    value={newProduct.advance_percentage}
+                                                    onChange={(e) => setNewProduct({ ...newProduct, advance_percentage: Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)) })}
+                                                    className="w-full rounded-2xl border border-stone-200 bg-[#f9f7f3] px-4 py-3 text-sm outline-none transition-all focus:border-[#5c1111] focus:ring-2 focus:ring-[#5c1111]/10"
+                                                    placeholder="0"
+                                                />
+                                                <p className="mt-1 text-xs text-stone-400">Set 0 to require full payment only.</p>
                                             </div>
 
                                             <div>

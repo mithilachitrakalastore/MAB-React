@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { CheckCircle, Gift, Heart, LogOut, Mail, MapPin, Package, Pencil, Phone, Save, ShoppingBag, Store, User, X } from 'lucide-react';
 import { dbService } from '../services/dbservices';
 import { ProductCard } from '../components/ProductCard';
+import { redirectToPayment } from '../services/payment';
 
 const statusStyles = {
     delivered: 'bg-[#e8f2e5] text-[#3f6b3b]', shipped: 'bg-[#e6f0f7] text-[#3c6782]',
@@ -54,6 +55,10 @@ export const ProfilePage = ({ currentUser, setCurrentUser, wishlist, products, t
     const [sellerPassword, setSellerPassword] = useState('');
     const [sellerRequesting, setSellerRequesting] = useState(false);
     const [sellerRequestError, setSellerRequestError] = useState('');
+    const [payingOrderId, setPayingOrderId] = useState('');
+    const [paymentError, setPaymentError] = useState('');
+    const [paymentGateway, setPaymentGateway] = useState('esewa');
+    const paymentResult = new URLSearchParams(window.location.search).get('payment');
     const [profile, setProfile] = useState({
         name: currentUser.name || '',
         username: currentUser.username || '',
@@ -145,6 +150,19 @@ export const ProfilePage = ({ currentUser, setCurrentUser, wishlist, products, t
         } catch (error) { alert(error.message || 'Failed to update order details.'); }
         finally { setSaving(false); }
     };
+    const payRemainingBalance = async (order) => {
+        setPayingOrderId(order.id);
+        setPaymentError('');
+        try {
+            const payment = await dbService.startPayment([order.id], currentUser.id, paymentGateway, 'balance');
+            redirectToPayment(payment);
+        } catch (error) {
+            console.error('Unable to start remaining-balance payment:', error);
+            setPaymentError(error.message || 'Unable to start payment. Please try again.');
+        } finally {
+            setPayingOrderId('');
+        }
+    };
     const navItems = [
         { id: 'dashboard', label: 'Dashboard', icon: User }, { id: 'orders', label: 'My Orders', icon: ShoppingBag },
         { id: 'wishlist', label: 'Wishlist', icon: Heart, count: wishlist.length }, { id: 'profile', label: 'Profile Information', icon: User }, { id: 'address', label: 'Saved Address', icon: MapPin }
@@ -179,7 +197,9 @@ export const ProfilePage = ({ currentUser, setCurrentUser, wishlist, products, t
                         </nav>
                     </aside>
                     <div className="min-w-0 space-y-5">
-                        {(activeView === 'dashboard' || activeView === 'orders') && <><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[{ label: 'Orders', value: orders.length, icon: Package }, { label: 'Wishlist', value: wishlist.length, icon: Heart }, { label: 'Reviews', value: deliveredOrders, icon: CheckCircle }, { label: 'Reward Points', value: orders.length * 250, icon: Gift }].map(({ label, value, icon: Icon }) => <div key={label} className="flex items-center gap-3 rounded border border-[#e5dccd] bg-[#fffaf0] px-4 py-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f5ead9] text-[#9b5f30]"><Icon size={17} /></span><div><p className="text-[11px] font-semibold uppercase tracking-widest text-[#8b8378]">{label}</p><p className="font-playfair text-lg font-bold">{Number(value).toLocaleString()}</p></div></div>)}</div><OrderPanel orders={activeView === 'dashboard' ? orders.slice(0, 4) : orders} loading={loading} error={ordersError} onCancel={handleCancelOrder} onViewOrder={setSelectedOrder} onViewAll={() => setActiveView('orders')} />{activeView === 'dashboard' && <WishlistPanel products={wishlistProducts.slice(0, 2)} addToCart={addToCart} toggleWishlist={toggleWishlist} />}</>}
+                        {paymentResult === 'success' && <p role="status" className="rounded border border-green-200 bg-green-50 px-4 py-3 text-sm font-semibold text-green-800">Payment verified. Your order balance has been updated.</p>}
+                        {paymentResult === 'failed' && <p role="alert" className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">Payment was not completed. You can retry below.</p>}
+                        {(activeView === 'dashboard' || activeView === 'orders') && <><div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{[{ label: 'Orders', value: orders.length, icon: Package }, { label: 'Wishlist', value: wishlist.length, icon: Heart }, { label: 'Reviews', value: deliveredOrders, icon: CheckCircle }, { label: 'Reward Points', value: orders.length * 250, icon: Gift }].map(({ label, value, icon: Icon }) => <div key={label} className="flex items-center gap-3 rounded border border-[#e5dccd] bg-[#fffaf0] px-4 py-3"><span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f5ead9] text-[#9b5f30]"><Icon size={17} /></span><div><p className="text-[11px] font-semibold uppercase tracking-widest text-[#8b8378]">{label}</p><p className="font-playfair text-lg font-bold">{Number(value).toLocaleString()}</p></div></div>)}</div><OutstandingPayments orders={orders} loading={loading} gateway={paymentGateway} setGateway={setPaymentGateway} payingOrderId={payingOrderId} error={paymentError} onPay={payRemainingBalance} /><OrderPanel orders={activeView === 'dashboard' ? orders.slice(0, 4) : orders} loading={loading} error={ordersError} onCancel={handleCancelOrder} onViewOrder={setSelectedOrder} onViewAll={() => setActiveView('orders')} />{activeView === 'dashboard' && <WishlistPanel products={wishlistProducts.slice(0, 2)} addToCart={addToCart} toggleWishlist={toggleWishlist} />}</>}
                         {activeView === 'wishlist' && <WishlistPanel products={wishlistProducts} addToCart={addToCart} toggleWishlist={toggleWishlist} expanded />}
                         {(activeView === 'profile' || activeView === 'address') && (
                             <>
@@ -195,7 +215,56 @@ export const ProfilePage = ({ currentUser, setCurrentUser, wishlist, products, t
     );
 };
 
-const OrderPanel = ({ orders, loading, error, onCancel, onViewOrder, onViewAll }) => <section className="overflow-hidden rounded border border-[#e5dccd] bg-[#fffaf0]"><div className="flex items-center justify-between border-b border-[#e5dccd] px-4 py-3"><h2 className="font-playfair text-lg font-bold">Recent Orders</h2><button type="button" onClick={onViewAll} className="inline-flex min-h-10 items-center rounded border border-[#d7c8b6] bg-[#fffaf0] px-3 text-xs font-semibold text-[#9b6c47] shadow-sm transition-colors hover:border-[#7c2020] hover:bg-[#f5ead9] hover:text-[#7c2020] focus:outline-none focus:ring-2 focus:ring-[#7c2020]/30">View all <span aria-hidden="true" className="ml-1 text-sm">→</span></button></div>{loading ? <div className="p-4 text-sm text-[#8b8378]">Loading orders...</div> : error ? <div role="alert" className="p-4 text-sm text-[#a64d43]">{error}</div> : orders.length === 0 ? <div className="p-8 text-center text-sm text-[#8b8378]">No orders yet. <Link className="text-[#7c2020]" to="/products">Browse the gallery.</Link></div> : orders.map(order => <div key={order.id} className="flex flex-wrap items-center gap-3 border-b border-[#eee6d9] px-4 py-3 last:border-0 sm:flex-nowrap"><img src={order.items?.[0]?.image} alt={order.items?.[0]?.name || 'Order item'} className="h-12 w-12 rounded object-cover" /><div className="min-w-0 flex-1"><p className="truncate font-playfair text-sm font-bold">{order.items?.[0]?.name || 'Mithila artwork'}{order.items?.length > 1 ? ' & more' : ''}</p><p className="mt-0.5 text-xs text-[#8b8378]">Order #{order.id} · {new Date(order.date).toLocaleDateString()}</p><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusStyles[order.status] || statusStyles.pending}`}>{formatStatus(order.status)}</span></div><p className="font-playfair text-sm font-bold">Rs. {Number(order.total || 0).toLocaleString()}</p><div className="flex w-full gap-2 sm:w-auto"><button type="button" onClick={() => onViewOrder(order)} className="flex-1 rounded border border-[#d7c8b6] px-3 py-2 text-xs font-semibold sm:flex-none">View Order</button>{order.status === 'pending' && <button type="button" onClick={() => onCancel(order.id)} className="rounded px-2 text-xs text-[#a64d43]">Cancel</button>}</div></div>)}</section>;
+const OutstandingPayments = ({ orders, loading, gateway, setGateway, payingOrderId, error, onPay }) => {
+    const dueOrders = orders.filter((order) => (
+        order.status !== 'cancelled' &&
+        Number(order.total || 0) - Number(order.amount_paid || 0) > 0.009
+    ));
+    if (loading || dueOrders.length === 0) return null;
+
+    return (
+        <section className="rounded border border-[#e5dccd] bg-[#fffaf0] p-4 sm:p-5">
+            <div className="mb-4">
+                <h2 className="font-playfair text-lg font-bold">Payments due</h2>
+                <p className="mt-1 text-xs text-[#8b8378]">Pay your remaining balance here at any time.</p>
+            </div>
+            <div className="mb-4 flex gap-2">
+                {['esewa', 'khalti'].map((method) => (
+                    <label key={method} className={`flex min-h-10 cursor-pointer items-center gap-2 rounded border px-3 text-xs font-semibold capitalize ${gateway === method ? 'border-[#7c2020] bg-[#f5ead9] text-[#7c2020]' : 'border-[#d7c8b6]'}`}>
+                        <input type="radio" name="balanceGateway" value={method} checked={gateway === method} onChange={() => setGateway(method)} />
+                        {method === 'esewa' ? 'eSewa' : 'Khalti'}
+                    </label>
+                ))}
+            </div>
+            {error && <p role="alert" className="mb-3 text-sm font-semibold text-[#a64d43]">{error}</p>}
+            <div className="space-y-3">
+                {dueOrders.map((order) => {
+                    const balance = Math.max(Number(order.total || 0) - Number(order.amount_paid || 0), 0);
+                    return (
+                        <div key={order.id} className="flex flex-wrap items-center justify-between gap-3 border-t border-[#eee6d9] pt-3">
+                            <div>
+                                <p className="text-sm font-semibold">Order #{order.id}</p>
+                                <p className="text-xs text-[#8b8378]">
+                                    Paid रु {Number(order.amount_paid || 0).toLocaleString()} of रु {Number(order.total || 0).toLocaleString()}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                disabled={Boolean(payingOrderId)}
+                                onClick={() => onPay(order)}
+                                className="min-h-10 rounded bg-[#7c2020] px-4 text-xs font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+                            >
+                                {payingOrderId === order.id ? 'Starting payment...' : `Pay रु ${balance.toLocaleString()} with ${gateway === 'esewa' ? 'eSewa' : 'Khalti'}`}
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+        </section>
+    );
+};
+
+const OrderPanel = ({ orders, loading, error, onCancel, onViewOrder, onViewAll }) => <section className="overflow-hidden rounded border border-[#e5dccd] bg-[#fffaf0]"><div className="flex items-center justify-between border-b border-[#e5dccd] px-4 py-3"><h2 className="font-playfair text-lg font-bold">Recent Orders</h2><button type="button" onClick={onViewAll} className="inline-flex min-h-10 items-center rounded border border-[#d7c8b6] bg-[#fffaf0] px-3 text-xs font-semibold text-[#9b6c47] shadow-sm transition-colors hover:border-[#7c2020] hover:bg-[#f5ead9] hover:text-[#7c2020] focus:outline-none focus:ring-2 focus:ring-[#7c2020]/30">View all <span aria-hidden="true" className="ml-1 text-sm">→</span></button></div>{loading ? <div className="p-4 text-sm text-[#8b8378]">Loading orders...</div> : error ? <div role="alert" className="p-4 text-sm text-[#a64d43]">{error}</div> : orders.length === 0 ? <div className="p-8 text-center text-sm text-[#8b8378]">No orders yet. <Link className="text-[#7c2020]" to="/products">Browse the gallery.</Link></div> : orders.map(order => <div key={order.id} className="flex flex-wrap items-center gap-3 border-b border-[#eee6d9] px-4 py-3 last:border-0 sm:flex-nowrap"><img src={order.items?.[0]?.image} alt={order.items?.[0]?.name || 'Order item'} className="h-12 w-12 rounded object-cover" /><div className="min-w-0 flex-1"><p className="truncate font-playfair text-sm font-bold">{order.items?.[0]?.name || 'Mithila artwork'}{order.items?.length > 1 ? ' & more' : ''}</p><p className="mt-0.5 text-xs text-[#8b8378]">Order #{order.id} · {new Date(order.date).toLocaleDateString()}</p><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusStyles[order.status] || statusStyles.pending}`}>{formatStatus(order.status)}</span></div><p className="font-playfair text-sm font-bold">Rs. {Number(order.total || 0).toLocaleString()}</p><div className="flex w-full gap-2 sm:w-auto"><button type="button" onClick={() => onViewOrder(order)} className="flex-1 rounded border border-[#d7c8b6] px-3 py-2 text-xs font-semibold sm:flex-none">View Order</button>{order.status === 'pending' && Number(order.amount_paid || 0) <= 0 && <button type="button" onClick={() => onCancel(order.id)} className="rounded px-2 text-xs text-[#a64d43]">Cancel</button>}</div></div>)}</section>;
 
 const OrderDetails = ({ order, onClose, onSave, saving }) => {
     const customer = order.customer || {};
