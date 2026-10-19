@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { dbService } from '../services/dbservices';
 import { supabase } from '../services/supabaseClient';
-import { Sparkles, Mail, ArrowRight, Lock, User as UserIcon, Phone, MapPin } from 'lucide-react';
+import { Sparkles, Mail, ArrowRight, Lock, User as UserIcon, Phone, MapPin, Eye, EyeOff } from 'lucide-react';
 
 export const LoginPage = ({ onLogin }) => {
     const [authMode, setAuthMode] = useState('login'); // 'login', 'register', 'completeProfile'
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [picture, setPicture] = useState('');
@@ -284,7 +285,7 @@ export const LoginPage = ({ onLogin }) => {
                     </div>
 
                     {(isLogin || isRegister) && (
-                        <div className="login-page__tabs" role="tablist" aria-label="Account access">
+                        <div className="login-page__tabs" role="group" aria-label="Account access">
                             <button type="button" className={isLogin ? 'is-active' : ''} onClick={() => { setAuthMode('login'); setError(''); }}>Sign In</button>
                             <button type="button" className={isRegister ? 'is-active' : ''} onClick={() => { setAuthMode('register'); setError(''); }}>Create Account</button>
                         </div>
@@ -441,29 +442,38 @@ export const LoginPage = ({ onLogin }) => {
                             )}
 
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase text-stone-400 pl-4">Username</label>
+                                <label htmlFor="account-username" className="text-[10px] font-black uppercase text-stone-400 pl-4">Username</label>
                                 <div className="relative">
                                     <Sparkles size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-300" />
-                                    <input required value={username} title='Enter Your Username' onChange={e => setUsername(e.target.value)} type="text" className="w-full pl-12 pr-6 py-4 bg-[#efece6] rounded-2xl outline-none focus:bg-white border border-transparent focus:border-[#5c1111]/20 transition-all font-medium" />
+                                    <input id="account-username" name="username" required value={username} title='Enter Your Username' onChange={e => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck="false" type="text" className="w-full pl-12 pr-6 py-4 bg-[#efece6] rounded-2xl outline-none focus:bg-white border border-transparent focus:border-[#5c1111]/20 transition-all font-medium" />
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-[10px] font-black uppercase text-stone-400 pl-4">Password</label>
+                                <label htmlFor="account-password" className="text-[10px] font-black uppercase text-stone-400 pl-4">Password</label>
                                 <div className="relative">
                                     <Lock size={16} className="absolute left-5 top-1/2 -translate-y-1/2 text-stone-300" />
-                                    <input required value={password} title='Enter Your Password' onChange={e => setPassword(e.target.value)} type="password" className="w-full pl-12 pr-6 py-4 bg-[#efece6] rounded-2xl outline-none focus:bg-white border border-transparent focus:border-[#5c1111]/20 transition-all font-medium" />
+                                    <input id="account-password" name="password" required value={password} title='Enter Your Password' onChange={e => setPassword(e.target.value)} autoComplete={isLogin ? 'current-password' : 'new-password'} type={showPassword ? 'text' : 'password'} className="w-full pl-12 pr-12 py-4 bg-[#efece6] rounded-2xl outline-none focus:bg-white border border-transparent focus:border-[#5c1111]/20 transition-all font-medium" />
+                                    <button
+                                        type="button"
+                                        className="login-page__password-toggle"
+                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                        aria-pressed={showPassword}
+                                        onClick={() => setShowPassword((visible) => !visible)}
+                                    >
+                                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                    </button>
                                 </div>
                             </div>
 
                             <button type="submit" disabled={isSubmitting} className="w-full bg-[#5c1111] text-white py-6 rounded-[2rem] font-black text-[12px] uppercase tracking-[0.3em] shadow-2xl premium-shadow hover:bg-[#2a2723] hover:-translate-y-1 transition-all disabled:cursor-wait disabled:opacity-60">
-                                {authMode === 'login' ? "Authorize Entry" : "Establish Heritage"}
+                                {authMode === 'login' ? 'Sign in' : 'Create account'}
                             </button>
 
                             {/* Google Sign In option only for customer login or register */}
                             {(authMode === 'login' || authMode === 'register') && (
                                 <div className="pt-4 border-t border-stone-200 mt-4 flex flex-col items-center">
-                                    <p className="text-[10px] font-black uppercase text-stone-400 mb-4">Or For Customers</p>
+                                    <p className="text-[10px] font-black uppercase text-stone-400 mb-4">Or continue with</p>
                                     <button
                                         type="button"
                                         onClick={handleGoogleLogin}
@@ -483,7 +493,7 @@ export const LoginPage = ({ onLogin }) => {
                             <button type="button" onClick={() => {
                                 setAuthMode(authMode === 'login' ? 'register' : 'login');
                                 setError('');
-                            }} className="md:flex justify-center w-full text-[10px] font-black uppercase text-stone-400 hover:text-[#5c1111] transition-colors mt-6">
+                            }} className="login-page__mode-switch md:flex justify-center w-full text-[10px] font-black uppercase text-stone-400 hover:text-[#5c1111] transition-colors mt-6">
                                 {authMode === 'login' ? (
                                     <>
                                         Not registered?

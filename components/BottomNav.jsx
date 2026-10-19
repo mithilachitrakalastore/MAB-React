@@ -5,6 +5,8 @@ import { Home, ShoppingBag, Heart, User, Sparkles } from 'lucide-react';
 export const BottomNav = ({ currentUser }) => {
     const location = useLocation();
 
+    if (location.pathname === '/login') return null;
+
     const navItems = [
         { icon: Home, label: 'Home', path: '/' },
         { icon: ShoppingBag, label: 'Shop', path: '/products' },

@@ -45,6 +45,16 @@ const RouteFooter = () => {
     return pathname === '/login' ? null : <Footer />;
 };
 
+const RouteMain = ({ children }) => {
+    const { pathname } = useLocation();
+
+    return (
+        <main className={`flex-grow ${pathname === '/login' ? 'pb-0' : 'pb-20'} lg:pb-0`}>
+            {children}
+        </main>
+    );
+};
+
 // Components
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
@@ -214,7 +224,7 @@ export default function App() {
             {showLoadingScreen && <StoreLoadingScreen isExiting={isLoadingScreenExiting} />}
             <div inert={showLoadingScreen} className="min-h-screen flex flex-col selection:bg-[#5c1111] selection:text-white animate-in fade-in zoom-in-95 duration-1000">
                 <Navbar cartCount={cartCount} currentUser={currentUser} setCurrentUser={setCurrentUser} />
-                <main className="flex-grow pb-20 lg:pb-0">
+                <RouteMain>
                     <Suspense fallback={null}>
                     <Routes>
                         <Route path="/" element={<HomePage products={products} addToCart={addToCart} wishlist={wishlist} toggleWishlist={toggleWishlist} />} />
@@ -241,7 +251,7 @@ export default function App() {
                         <Route path="/verify/:invoiceNo" element={<InvoiceVerificationPage />} />
                     </Routes>
                     </Suspense>
-                </main>
+                </RouteMain>
                 <BottomNav currentUser={currentUser} />
                 <RouteFooter />
             </div>
