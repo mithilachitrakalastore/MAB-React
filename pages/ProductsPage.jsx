@@ -349,8 +349,8 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
                         </div>
                     </div>
                     <div className="-mx-1 mt-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:hidden">
-                        <button type="button" onClick={() => setFilterOpen(true)} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[#d9b7a8] bg-[#fff8f2] px-3 text-[10px] font-semibold text-[#7c2020]"><Filter size={13} /> Filter{activeFilterCount > 0 && <span className="ml-0.5">{activeFilterCount}</span>}<ChevronDown size={12} /></button>
-                        {categoryOptions.filter(([collection]) => collection !== 'all').map(([collection, label]) => <button key={collection} type="button" onClick={() => setCategory(selectedCategory === collection ? 'all' : collection)} className={`min-h-9 shrink-0 rounded-lg px-3 text-[10px] font-medium transition-colors ${selectedCategory === collection ? 'bg-[#7c2020] text-white' : 'bg-[#eeeae4] text-[#6f675e]'}`}>{label}</button>)}
+                        <button type="button" onClick={() => setFilterOpen(true)} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-full border border-[#d9b7a8] bg-[#fff8f2] px-3 text-[11px] font-semibold text-[#7c2020]"><Filter size={14} /> Filter{activeFilterCount > 0 && <span className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#7c2020] px-1 text-[9px] text-white">{activeFilterCount}</span>}<ChevronDown size={12} /></button>
+                        {categoryOptions.filter(([collection]) => collection !== 'all').map(([collection, label]) => <button key={collection} type="button" onClick={() => setCategory(selectedCategory === collection ? 'all' : collection)} aria-pressed={selectedCategory === collection} className={`min-h-9 shrink-0 rounded-full border px-3 text-[11px] font-medium transition-colors ${selectedCategory === collection ? 'border-[#7c2020] bg-[#7c2020] text-white' : 'border-[#e6dfd4] bg-[#fffdf9] text-[#6f675e]'}`}>{label}</button>)}
                     </div>
                 </div>
 
@@ -359,56 +359,58 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
                 <aside
                     aria-hidden={!filterOpen && !isDesktop}
                     inert={!filterOpen && !isDesktop}
-                    className={`fixed inset-x-0 bottom-0 top-[12vh] z-[120] flex flex-col overflow-hidden rounded-t-2xl border border-[#e0d8cb] bg-white shadow-2xl transition-transform duration-300 ease-out lg:sticky lg:top-24 lg:z-auto lg:max-h-[calc(100vh-7rem)] lg:w-auto lg:translate-x-0 lg:translate-y-0 lg:rounded-xl lg:border lg:shadow-sm ${filterOpen ? 'translate-y-0' : 'translate-y-full'}`}
+                    className={`fixed inset-x-0 bottom-0 top-[8vh] z-[120] flex flex-col overflow-hidden rounded-t-[1.25rem] border border-[#e0d8cb] bg-white shadow-2xl transition-transform duration-300 ease-out lg:sticky lg:top-24 lg:z-auto lg:max-h-[calc(100vh-7rem)] lg:w-auto lg:translate-x-0 lg:translate-y-0 lg:rounded-xl lg:border lg:shadow-sm ${filterOpen ? 'translate-y-0' : 'translate-y-full'}`}
                     aria-label="Product filters"
                 >
-                    <div className="flex items-center justify-between border-b border-[#e6dfd4] px-4 py-3 lg:px-5 lg:py-4">
-                        <div className="flex items-center gap-3">
-                            <span className="h-1 w-8 rounded-full bg-[#d8d2ca] lg:hidden" />
-                            <div>
-                                <h2 className="text-xs font-bold uppercase tracking-[0.16em]">Filters</h2>
-                                <p className="mt-1 text-[9px] text-[#81786d]">{filtered.length} products match</p>
-                            </div>
+                    <div className="border-b border-[#e6dfd4] px-4 pb-3 pt-2 lg:px-5 lg:py-4">
+                        <div className="mb-2 flex justify-center lg:hidden" aria-hidden="true">
+                            <span className="h-1 w-9 rounded-full bg-[#d8d2ca]" />
                         </div>
-                        <button type="button" onClick={() => setFilterOpen(false)} className="rounded-full p-2 text-[#6f675e] hover:bg-[#eee8dc] lg:hidden" aria-label="Close filters"><X size={17} /></button>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h2 className="text-sm font-bold text-[#292621] lg:text-xs lg:uppercase lg:tracking-[0.16em]">Filters</h2>
+                                <p className="mt-0.5 text-[10px] text-[#81786d]">{filtered.length} products match</p>
+                            </div>
+                            <button type="button" onClick={() => setFilterOpen(false)} className="rounded-full p-2 text-[#6f675e] transition-colors hover:bg-[#eee8dc] lg:hidden" aria-label="Close filters"><X size={18} /></button>
+                        </div>
                     </div>
                     <div className="flex min-h-0 flex-1">
-                        <nav className="w-[112px] shrink-0 overflow-y-auto bg-[#f5f5f5] py-1 sm:w-[145px] lg:hidden" aria-label="Filter sections">
+                        <nav className="w-[108px] shrink-0 overflow-y-auto bg-[#f7f5f1] py-2 sm:w-[132px] lg:hidden" aria-label="Filter sections">
                             {[
-                                ['collection', 'Collection'],
-                                ['type', 'Product Type'],
-                                ['price', 'Price'],
-                                ['style', 'Style / Theme'],
-                            ].map(([key, label]) => <button key={key} type="button" onClick={() => setMobileFilterSection(key)} className={`relative w-full px-3 py-4 text-left text-[10px] leading-tight ${mobileFilterSection === key ? 'bg-white font-bold text-[#c75a25]' : 'text-[#6f675e]'}`}>{mobileFilterSection === key && <span className="absolute inset-y-0 left-0 w-1 bg-[#c75a25]" />}{label}</button>)}
+                                ['collection', 'Collection', selectedCategory !== 'all' ? 1 : 0],
+                                ['type', 'Product Type', selectedTypes.length],
+                                ['price', 'Price', priceLimit !== null ? 1 : 0],
+                                ['style', 'Style / Theme', selectedStyles.length],
+                            ].map(([key, label, selectionCount]) => <button key={key} type="button" onClick={() => setMobileFilterSection(key)} aria-pressed={mobileFilterSection === key} className={`relative flex min-h-12 w-full items-center justify-between gap-1 px-3 text-left text-[11px] leading-tight transition-colors ${mobileFilterSection === key ? 'bg-white font-semibold text-[#c75a25]' : 'text-[#6f675e] hover:bg-white/60'}`}>{mobileFilterSection === key && <span className="absolute inset-y-0 left-0 w-1 bg-[#c75a25]" />}<span>{label}</span>{selectionCount > 0 && <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-[#f7e5da] px-1 text-[9px] font-semibold text-[#a7441c]">{selectionCount}</span>}</button>)}
                         </nav>
-                        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4 lg:px-5">
+                        <div className="flex-1 space-y-6 overflow-y-auto px-3 py-4 sm:px-4 lg:px-5">
                         <section className={`lg:hidden ${mobileFilterSection === 'collection' ? '' : 'hidden'}`}>
-                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Collection</h3>
+                            <h3 className="mb-3 text-[13px] font-semibold text-[#292621]">Collection</h3>
                             <div className="grid grid-cols-2 gap-2">
-                                {categoryOptions.map(([collection, label]) => <button key={collection} type="button" onClick={() => setCategory(collection)} className={`min-h-10 rounded-md px-2 text-[10px] ${selectedCategory === collection ? 'border border-[#c75a25] bg-[#fff5ef] font-semibold text-[#c75a25]' : 'bg-[#f6f6f6] text-[#6f675e]'}`}>{label}<span className="ml-1 text-[8px] opacity-70">({categoryCounts[collection] || 0})</span></button>)}
+                                {categoryOptions.map(([collection, label]) => <button key={collection} type="button" onClick={() => setCategory(collection)} aria-pressed={selectedCategory === collection} className={`flex min-h-11 items-center justify-between gap-1 rounded-md border px-2.5 text-left text-[11px] transition-colors ${selectedCategory === collection ? 'border-[#d96a37] bg-[#fff5ef] font-semibold text-[#a7441c]' : 'border-[#eee9e2] bg-white text-[#6f675e]'}`}><span className="truncate">{label}</span><span className="shrink-0 text-[9px] text-[#9c9387]">{categoryCounts[collection] || 0}</span></button>)}
                             </div>
                         </section>
                         <section className={`lg:hidden ${mobileFilterSection === 'type' ? '' : 'hidden'}`}>
-                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Product Type</h3>
+                            <h3 className="mb-3 text-[13px] font-semibold text-[#292621]">Product Type</h3>
                             <div className="grid grid-cols-2 gap-2">
                                 {typeOptions.map((type) => {
                                     const isSelected = selectedTypes.includes(type.key);
-                                    return <button key={type.key} type="button" onClick={() => toggleType(type.key)} className={`min-h-10 rounded-md px-2 text-[10px] ${isSelected ? 'border border-[#c75a25] bg-[#fff5ef] font-semibold text-[#c75a25]' : 'bg-[#f6f6f6] text-[#6f675e]'}`}>{type.label}<span className="ml-1 text-[8px] opacity-70">({type.count})</span></button>;
+                                    return <button key={type.key} type="button" onClick={() => toggleType(type.key)} aria-pressed={isSelected} className={`flex min-h-11 items-center justify-between gap-1 rounded-md border px-2.5 text-left text-[11px] transition-colors ${isSelected ? 'border-[#d96a37] bg-[#fff5ef] font-semibold text-[#a7441c]' : 'border-[#eee9e2] bg-white text-[#6f675e]'}`}><span className="truncate">{type.label}</span><span className="shrink-0 text-[9px] text-[#9c9387]">{type.count}</span></button>;
                                 })}
                             </div>
                         </section>
                         <section className={`lg:hidden ${mobileFilterSection === 'price' ? '' : 'hidden'}`}>
-                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Price</h3>
+                            <h3 className="mb-5 text-[13px] font-semibold text-[#292621]">Price</h3>
                             <input type="range" min="0" max={maxPrice} step="100" value={activePriceLimit} onChange={(event) => setPriceLimit(Number(event.target.value))} className="h-1 w-full cursor-pointer accent-[#c75a25]" aria-label="Maximum price" />
-                            <div className="mt-2 flex justify-between text-[10px] text-[#81786d]"><span>Rs 0</span><span>{activePriceLimit >= maxPrice ? `Rs ${maxPrice.toLocaleString()}+` : `Up to Rs ${activePriceLimit.toLocaleString()}`}</span></div>
+                            <div className="mt-3 flex justify-between text-[11px] text-[#81786d]"><span>Rs 0</span><span className="font-semibold text-[#a7441c]">{activePriceLimit >= maxPrice ? `Rs ${maxPrice.toLocaleString()}+` : `Up to Rs ${activePriceLimit.toLocaleString()}`}</span></div>
                         </section>
                         <section className={`lg:hidden ${mobileFilterSection === 'style' ? '' : 'hidden'}`}>
-                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Style / Theme</h3>
+                            <h3 className="mb-3 text-[13px] font-semibold text-[#292621]">Style / Theme</h3>
                             <div className="grid grid-cols-2 gap-2">
                                 {styleOptions.map((style) => {
                                     const count = styleCounts[style.key] || 0;
                                     const isSelected = selectedStyles.includes(style.key);
-                                    return <button key={style.key} type="button" disabled={count === 0} onClick={() => toggleStyle(style.key)} className={`min-h-10 rounded-md px-2 text-[10px] disabled:opacity-40 ${isSelected ? 'border border-[#c75a25] bg-[#fff5ef] font-semibold text-[#c75a25]' : 'bg-[#f6f6f6] text-[#6f675e]'}`}>{style.label}<span className="ml-1 text-[8px] opacity-70">({count})</span></button>;
+                                    return <button key={style.key} type="button" disabled={count === 0} onClick={() => toggleStyle(style.key)} aria-pressed={isSelected} className={`flex min-h-11 items-center justify-between gap-1 rounded-md border px-2.5 text-left text-[11px] transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${isSelected ? 'border-[#d96a37] bg-[#fff5ef] font-semibold text-[#a7441c]' : 'border-[#eee9e2] bg-white text-[#6f675e]'}`}><span className="truncate">{style.label}</span><span className="shrink-0 text-[9px] text-[#9c9387]">{count}</span></button>;
                                 })}
                             </div>
                         </section>
@@ -445,8 +447,8 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
                     </div>
                     </div>
                     <div className="flex gap-2 border-t border-[#e6dfd4] bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4">
-                        <button type="button" onClick={clearFilters} className="flex-1 rounded-md border border-[#cfc6b8] py-3 text-[10px] font-semibold text-[#6f675e] transition-colors hover:border-[#7c2020] hover:text-[#7c2020] lg:text-[9px] lg:font-bold lg:uppercase lg:tracking-[0.14em]">Reset</button>
-                        <button type="button" onClick={() => setFilterOpen(false)} className="flex-1 rounded-md bg-[#ee5b0b] py-2 text-[10px] font-semibold text-white transition-colors hover:bg-[#d84e06] lg:bg-[#7c2020] lg:py-3 lg:text-[9px] lg:font-bold lg:uppercase lg:tracking-[0.14em] lg:hover:bg-[#5c1111]">Done <span className="block text-[9px] font-normal lg:hidden">{filtered.length} Products</span><span className="hidden lg:inline"> {filtered.length} Products</span></button>
+                        <button type="button" onClick={clearFilters} className="min-h-11 flex-1 rounded-md border border-[#cfc6b8] text-[11px] font-semibold text-[#6f675e] transition-colors hover:border-[#7c2020] hover:text-[#7c2020] lg:text-[9px] lg:font-bold lg:uppercase lg:tracking-[0.14em]">Reset</button>
+                        <button type="button" onClick={() => setFilterOpen(false)} className="min-h-11 flex-1 rounded-md bg-[#ee5b0b] text-[11px] font-semibold text-white transition-colors hover:bg-[#d84e06] lg:bg-[#7c2020] lg:text-[9px] lg:font-bold lg:uppercase lg:tracking-[0.14em] lg:hover:bg-[#5c1111]"><span className="lg:hidden">Show {filtered.length} products</span><span className="hidden lg:inline">Done {filtered.length} Products</span></button>
                     </div>
                 </aside>
 

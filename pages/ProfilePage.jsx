@@ -170,7 +170,7 @@ export const ProfilePage = ({ currentUser, setCurrentUser, wishlist, products, t
     const showSellerDashboardLink = currentUser.role === 'admin' || (currentUser.role === 'seller' && currentUser.status === 'active');
 
     return (
-        <main className="min-h-screen bg-[#fcf8f0] px-4 pb-32 pt-8 text-[#29251f] sm:px-6 lg:px-5 lg:pt-32">
+        <main className="min-h-screen bg-[#fcf8f0] px-4 pb-32 pt-4 text-[#29251f] sm:px-6 sm:pt-8 lg:px-5 lg:pt-32">
             <div className="mx-auto max-w-[1440px]">
                 <div className="mb-5 flex items-center gap-2 text-xs font-semibold text-[#8b8378]"><Link to="/">Home</Link><span>/</span><span className="text-[#29251f]">Account</span></div>
                 <header className="relative mb-5 overflow-hidden rounded border border-[#e5dccd] bg-[#fffaf0] px-5 py-5 sm:px-8">

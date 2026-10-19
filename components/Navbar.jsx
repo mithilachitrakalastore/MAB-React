@@ -53,7 +53,7 @@ export const Navbar = ({ cartCount, currentUser, setCurrentUser }) => {
     const searchWrapRef = useRef(null);
     const location = useLocation();
     const navigate = useNavigate();
-    const isProfilePage = location.pathname === '/profile';
+    const isAccountPage = location.pathname === '/profile' || location.pathname === '/login';
 
     useEffect(() => {
         setSearchOpen(false);
@@ -98,7 +98,7 @@ export const Navbar = ({ cartCount, currentUser, setCurrentUser }) => {
     const sellerLink = currentUser && (currentUser.role === 'seller' || currentUser.role === 'admin');
 
     return (
-        <header className={`fixed inset-x-0 top-0 z-[100] print:hidden ${isProfilePage ? 'hidden lg:block' : ''}`} ref={searchWrapRef}>
+        <header className={`fixed inset-x-0 top-0 z-[100] print:hidden ${isAccountPage ? 'hidden lg:block' : ''}`} ref={searchWrapRef}>
             <div className="w-full border-b border-[#ded7ca] bg-[#f5f1e9]/95 shadow-[0_4px_16px_rgba(41,38,33,0.06)] backdrop-blur-xl lg:border-white/10 lg:bg-[#171512]/95 lg:shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
                 <div className="hidden items-center justify-between gap-2 px-3 py-2.5 sm:gap-2 sm:px-5 sm:py-3 lg:flex lg:px-4">
                     <Link to="/" className="flex items-center gap-2.5 shrink-0 sm:gap-3">
