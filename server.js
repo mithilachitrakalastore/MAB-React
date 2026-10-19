@@ -143,6 +143,7 @@ const normalizeProductData = (productData = {}) => {
 
     return {
         ...productData,
+        badge: String(productData.badge || '').trim() || null,
         storeName: String(productData.storeName || '').trim(),
         name: String(productData.name || '').trim(),
         product_code: String(productData.product_code || '').trim(),

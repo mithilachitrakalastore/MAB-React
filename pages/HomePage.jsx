@@ -233,6 +233,10 @@ export const HomePage = ({ products, addToCart, wishlist, toggleWishlist }) => {
     const featuredFill = featured.length < 6
         ? [...featured, ...products.filter((p) => !p.featured).slice(0, 6 - featured.length)]
         : featured;
+    const badgeContext = useMemo(() => ({
+        catalog: products,
+        wishlistProducts: products.filter((product) => wishlist.includes(product.id)),
+    }), [products, wishlist]);
 
     const categoryImage = (cat) => cat.fallback;
 
@@ -290,7 +294,7 @@ export const HomePage = ({ products, addToCart, wishlist, toggleWishlist }) => {
 
     return (
         <div className="bg-[#FAF7F2] pb-12 text-[#241F1A] lg:pb-0">
-            <div className="pt-[3.2rem] lg:pt-[3.8rem]">
+            <div className="pt-[3.2rem] lg:pt-20">
                 <Reveal className="lg:mx-auto delay-100">
                     <HeroSection heroSlides={heroSlides} />
                 </Reveal>
@@ -337,6 +341,7 @@ export const HomePage = ({ products, addToCart, wishlist, toggleWishlist }) => {
                                     addToCart={addToCart}
                                     isWishlisted={wishlist.includes(p.id)}
                                     toggleWishlist={toggleWishlist}
+                                    badgeContext={badgeContext}
                                 />
                             </Reveal>
                         ))}

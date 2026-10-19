@@ -175,6 +175,10 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
     const maxPrice = useMemo(() => Math.max(10000, ...products.map((product) => Number(product.price) || 0)), [products]);
     const activePriceLimit = priceLimit ?? maxPrice;
     const activeFilterCount = selectedTypes.length + selectedStyles.length + (selectedCategory !== 'all' ? 1 : 0) + (priceLimit !== null ? 1 : 0);
+    const badgeContext = useMemo(() => ({
+        catalog: products,
+        wishlistProducts: products.filter((product) => wishlist.includes(product.id)),
+    }), [products, wishlist]);
 
     useEffect(() => {
         setSearch(searchParams.get('q') || '');
@@ -477,7 +481,7 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
                             </form>
                         </div>
                         {assistantSearch === search.trim() && assistantSearch && <p className="mb-4 text-xs text-[#71695e]" role="status">Product finder matched {filtered.length} {filtered.length === 1 ? 'product' : 'products'} using related words, categories and product details.</p>}
-                        {filtered.length > 0 ? <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-2 sm:gap-x-3 sm:gap-y-6 xl:grid-cols-4">{filtered.map((p, i) => <Reveal key={p.id} delay={(i % 3) * 55}><ProductCard product={p} addToCart={addToCart} isWishlisted={wishlist.includes(p.id)} toggleWishlist={toggleWishlist} /></Reveal>)}</div> : <div className="border border-dashed border-[#cfc6b8] bg-[#fbf9f5] px-6 py-24 text-center"><Filter size={28} className="mx-auto mb-5 text-[#b8aea0]" /><h3 className="font-playfair text-2xl font-bold">No works found</h3><p className="mt-2 text-sm text-[#81786d]">Try another search or clear your filters.</p><button onClick={clearFilters} className="mt-6 bg-[#7c2020] px-5 py-3 text-[9px] font-bold uppercase tracking-widest text-white">Clear Filters</button></div>}
+                        {filtered.length > 0 ? <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-2 sm:gap-x-3 sm:gap-y-6 xl:grid-cols-4">{filtered.map((p, i) => <Reveal key={p.id} delay={(i % 3) * 55}><ProductCard product={p} addToCart={addToCart} isWishlisted={wishlist.includes(p.id)} toggleWishlist={toggleWishlist} badgeContext={badgeContext} /></Reveal>)}</div> : <div className="border border-dashed border-[#cfc6b8] bg-[#fbf9f5] px-6 py-24 text-center"><Filter size={28} className="mx-auto mb-5 text-[#b8aea0]" /><h3 className="font-playfair text-2xl font-bold">No works found</h3><p className="mt-2 text-sm text-[#81786d]">Try another search or clear your filters.</p><button onClick={clearFilters} className="mt-6 bg-[#7c2020] px-5 py-3 text-[9px] font-bold uppercase tracking-widest text-white">Clear Filters</button></div>}
                     </main>
                 </div>
                 <div className="mt-12 grid grid-cols-3 border-y border-[#ded7ca] py-5 text-center text-[#6f675e] sm:mt-16"><div className="flex flex-col items-center gap-1 border-r border-[#ded7ca] text-[8px] uppercase tracking-[0.13em] sm:flex-row sm:justify-center sm:text-[9px]"><ShieldCheck size={15} /> <span>100% Genuine</span></div><div className="flex flex-col items-center gap-1 border-r border-[#ded7ca] text-[8px] uppercase tracking-[0.13em] sm:flex-row sm:justify-center sm:text-[9px]"><Truck size={15} /> <span>Secure Delivery</span></div><div className="flex flex-col items-center gap-1 text-[8px] uppercase tracking-[0.13em] sm:flex-row sm:justify-center sm:text-[9px]"><Heart size={15} /> <span>Support Artists</span></div></div>

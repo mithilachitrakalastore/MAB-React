@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Star, ArrowRight, ShoppingCart, Heart, Eye, Share2, Check } from 'lucide-react';
-import { Badge } from './Badge';
+import { ProductBadges } from './ProductBadges';
 import { QuickViewModal } from './QuickViewModal';
 import { buildProductShareUrl } from '../services/shareProduct';
 
-export const ProductCard = ({ product, addToCart, isWishlisted, toggleWishlist }) => {
+export const ProductCard = ({ product, addToCart, isWishlisted, toggleWishlist, badgeContext }) => {
     const [isQuickViewOpen, setIsQuickViewOpen] = useState(false);
     const [isAnimating, setIsAnimating] = useState(false);
     const [isCartAnimating, setIsCartAnimating] = useState(false);
@@ -84,7 +84,7 @@ export const ProductCard = ({ product, addToCart, isWishlisted, toggleWishlist }
                     </Link>
                     
                     <div className="absolute left-2 top-1 z-10 sm:left-3 sm:top-3">
-                        {product.badge && <Badge variant={product.badge === 'Bestseller' ? 'saffron' : 'primary'}>{product.badge}</Badge>}
+                        <ProductBadges product={product} context={badgeContext} />
                     </div>
 
                     <div className="absolute right-2 top-2 z-10 flex flex-col gap-1 sm:right-3 sm:top-3 sm:gap-2">
@@ -173,6 +173,7 @@ export const ProductCard = ({ product, addToCart, isWishlisted, toggleWishlist }
                 isOpen={isQuickViewOpen}
                 onClose={() => setIsQuickViewOpen(false)}
                 addToCart={addToCart}
+                badgeContext={badgeContext}
             />
         </>
     );

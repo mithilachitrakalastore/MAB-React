@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, ShoppingCart, Star, MapPin, Check } from 'lucide-react';
-import { Badge } from './Badge';
+import { ProductBadges } from './ProductBadges';
 
-export const QuickViewModal = ({ product, isOpen, onClose, addToCart }) => {
+export const QuickViewModal = ({ product, isOpen, onClose, addToCart, badgeContext }) => {
     const [isCartAnimating, setIsCartAnimating] = useState(false);
     const [isAdded, setIsAdded] = useState(false);
 
@@ -55,7 +55,7 @@ export const QuickViewModal = ({ product, isOpen, onClose, addToCart }) => {
                 <div className="md:w-[55%] p-8 md:p-10 flex flex-col justify-center space-y-6">
                     <div className="space-y-3">
                         <div className="flex items-center gap-3">
-                            <Badge variant="saffron">{product.badge || 'Artisan'}</Badge>
+                            <ProductBadges product={product} context={badgeContext} fallbackLabel="Artisan" />
                             <div className="flex items-center gap-1 text-amber-600 text-[9px] font-black">
                                 <Star size={10} fill="currentColor" /> {product.rating}
                             </div>
