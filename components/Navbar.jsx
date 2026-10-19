@@ -53,11 +53,13 @@ export const Navbar = ({ cartCount, currentUser, setCurrentUser }) => {
     const searchWrapRef = useRef(null);
     const location = useLocation();
     const navigate = useNavigate();
+    const isProfilePage = location.pathname === '/profile';
 
     useEffect(() => {
         setSearchOpen(false);
         setOpenDropdown(null);
-    }, [location.pathname]);
+        setQuery(new URLSearchParams(location.search).get('q') || '');
+    }, [location.pathname, location.search]);
 
     useEffect(() => {
         if (!searchOpen) return undefined;
@@ -96,9 +98,9 @@ export const Navbar = ({ cartCount, currentUser, setCurrentUser }) => {
     const sellerLink = currentUser && (currentUser.role === 'seller' || currentUser.role === 'admin');
 
     return (
-        <header className="fixed inset-x-0 top-0 z-[100] print:hidden" ref={searchWrapRef}>
-            <div className="w-full border-b border-white/10 bg-[#171512]/95 shadow-[0_8px_24px_rgba(0,0,0,0.2)] backdrop-blur-xl">
-                <div className="flex items-center justify-between gap-2 px-3 py-2.5 sm:gap-2 sm:px-5 sm:py-3 lg:px-4">
+        <header className={`fixed inset-x-0 top-0 z-[100] print:hidden ${isProfilePage ? 'hidden lg:block' : ''}`} ref={searchWrapRef}>
+            <div className="w-full border-b border-[#ded7ca] bg-[#f5f1e9]/95 shadow-[0_4px_16px_rgba(41,38,33,0.06)] backdrop-blur-xl lg:border-white/10 lg:bg-[#171512]/95 lg:shadow-[0_8px_24px_rgba(0,0,0,0.2)]">
+                <div className="hidden items-center justify-between gap-2 px-3 py-2.5 sm:gap-2 sm:px-5 sm:py-3 lg:flex lg:px-4">
                     <Link to="/" className="flex items-center gap-2.5 shrink-0 sm:gap-3">
                         <div className="flex h-8 w-8 items-center justify-center rounded-full border border-[#E7C77A] bg-[#fff5d6] shadow-[0_0_0_2px_rgba(242,217,140,0.2)] transition-transform duration-200 hover:scale-[1.02] sm:h-9 sm:w-9">
                             <img
@@ -218,6 +220,36 @@ export const Navbar = ({ cartCount, currentUser, setCurrentUser }) => {
                             </button>
                         )}
                     </div>
+                </div>
+
+                <div className="flex items-center gap-2 px-3 py-2 lg:hidden">
+                    <Link to="/" className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/80" aria-label="Mithila Chitrakala Store home">
+                        <img
+                            className="h-full w-full object-contain"
+                            src="https://res.cloudinary.com/djmbuuz28/image/upload/v1761108817/logo.png"
+                            alt="Mithila Chitrakala Store"
+                        />
+                    </Link>
+                    <form onSubmit={runSearch} className="flex min-w-0 flex-1 items-center rounded-full border border-[#d8cfc2] bg-white/80 px-3 shadow-sm focus-within:border-[#9a6b4b]">
+                        <Search size={16} className="shrink-0 text-[#897d70]" />
+                        <input
+                            type="search"
+                            value={query}
+                            onChange={(event) => setQuery(event.target.value)}
+                            placeholder="Search paintings, crafts..."
+                            className="h-9 min-w-0 flex-1 bg-transparent px-2 text-xs text-[#292621] outline-none placeholder:text-[#9d9489]"
+                            aria-label="Search products"
+                        />
+                    </form>
+                    <Link
+                        to="/cart"
+                        className="relative inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e9e1d5] text-[#5c1111] transition-colors hover:bg-[#dfd2c1]"
+                        title="Cart"
+                        aria-label={`Cart${cartCount > 0 ? `, ${cartCount} items` : ''}`}
+                    >
+                        <ShoppingCart size={18} />
+                        {cartCount > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#7c2020] px-1 text-[9px] font-bold text-white">{cartCount}</span>}
+                    </Link>
                 </div>
 
                 {searchOpen && (

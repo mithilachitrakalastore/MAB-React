@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { SectionHeading } from '../components/SectionHeading';
 import { dbService } from '../services/dbservices';
+import { redirectToPayment } from '../services/payment';
 
 const TrackingStep = ({ icon: Icon, label, status }) => (
     <div className="flex flex-col items-center relative z-10">
@@ -28,9 +29,17 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
     const subtotal = cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
     const shippingFee = subtotal > 5000 ? 0 : 250;
     const total = subtotal + shippingFee;
+    const advanceAmount = Math.round(cart.reduce(
+        (sum, item) => sum + item.price * item.quantity * Number(item.advance_percentage || 0) / 100,
+        0
+    ) * 100) / 100;
+    const canPayAdvance = cart.length > 0 && cart.every((item) => Number(item.advance_percentage) > 0);
     
     const [step, setStep] = useState('cart');
     const [orderInfos, setOrderInfos] = useState([]);
+    const [paymentType, setPaymentType] = useState('full');
+    const [paymentGateway, setPaymentGateway] = useState('esewa');
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [shippingDetails, setShippingDetails] = useState({
         name: '', email: '', phone: '', address: '', city: ''
     });
@@ -39,9 +48,16 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
 
     const handleCheckout = async (e) => {
         e.preventDefault();
+        if (isSubmitting) return;
+        setIsSubmitting(true);
         setCheckoutError('');
+        let ordersCreated = [];
 
         try {
+            if (!currentUser?.id) throw new Error('Please sign in before placing an order.');
+            if (paymentType === 'advance' && !canPayAdvance) {
+                throw new Error('Advance payment is not available for every item in your bag.');
+            }
             // Group cart items by seller
             const itemsBySeller = cart.reduce((acc, item) => {
                 if (!acc[item.seller_id]) acc[item.seller_id] = [];
@@ -68,6 +84,8 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
                     customer_payment_status: 'pending',
                     customer_payment_verified: false,
                     mcs_payment_status: 'pending',
+                    payment_type: paymentType,
+                    payment_gateway: paymentGateway,
                     customer: {
                         ...shippingDetails
                     }
@@ -75,6 +93,7 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
 
                 await dbService.saveOrder(newOrder);
                 orders.push(newOrder);
+                ordersCreated.push(newOrder);
             }
 
             try {
@@ -82,13 +101,28 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
             } catch (error) {
                 console.error('Order was placed, but product inventory could not be refreshed:', error);
             }
+            const payment = await dbService.startPayment(
+                orders.map((order) => order.id),
+                currentUser.id,
+                paymentGateway,
+                paymentType
+            );
             setOrderInfos(orders);
             clearCart();
-            setStep('tracking');
-            window.scrollTo(0, 0);
+            redirectToPayment(payment);
         } catch (error) {
             console.error('Checkout failed:', error);
-            setCheckoutError('We could not complete your order right now. Please try again.');
+            if (ordersCreated.length > 0) {
+                setOrderInfos(ordersCreated);
+                clearCart();
+                setStep('tracking');
+                window.scrollTo(0, 0);
+                setCheckoutError('Your order was saved, but payment could not be started. Visit your profile dashboard to retry payment.');
+            } else {
+                setCheckoutError(error.message || 'We could not complete your order right now. Please try again.');
+            }
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -105,8 +139,9 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
                         <div className="w-16 h-16 bg-green-50/50 text-green-700 rounded-2xl flex items-center justify-center mx-auto shadow-sm mb-4 border border-green-100">
                             <CheckCircle size={32} />
                         </div>
-                        <h2 className="font-playfair text-2xl sm:text-4xl font-black text-[#2a2723]">Greatness Awaits.</h2>
-                        <p className="text-stone-500 font-light text-sm sm:text-base">Your {orderInfos.length > 1 ? 'orders' : 'order'} <span className="text-[#5c1111] font-black tracking-widest">#{orderInfos.map(o => o.id).join(', #')}</span> {orderInfos.length > 1 ? 'are' : 'is'} confirmed.</p>
+                        <h2 className="font-playfair text-2xl sm:text-4xl font-black text-[#2a2723]">{checkoutError ? 'Payment needed.' : 'Greatness Awaits.'}</h2>
+                        <p className="text-stone-500 font-light text-sm sm:text-base">Your {orderInfos.length > 1 ? 'orders' : 'order'} <span className="text-[#5c1111] font-black tracking-widest">#{orderInfos.map(o => o.id).join(', #')}</span> {checkoutError ? 'is saved and awaiting payment.' : 'is ready for payment confirmation.'}</p>
+                        {checkoutError && <p role="alert" className="mx-auto max-w-md rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-900">{checkoutError}</p>}
                         <p className="text-xs text-stone-400">Receipt sent to: <span className="font-bold text-[#2a2723]">{orderInfos[0].customer.email}</span></p>
                         <p className="mx-auto max-w-md rounded-lg border border-green-100 bg-green-50 px-4 py-3 text-xs font-semibold text-green-800">
                             We will contact you soon via your WhatsApp number: {orderInfos[0].customer.phone}
@@ -168,6 +203,7 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-3">
+                        {checkoutError && <Link to="/profile" className="flex-1 bg-[#5c1111] text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-[11px] uppercase tracking-[0.15em] text-center">Go to profile to pay</Link>}
                         <Link to="/products" className="flex-1 bg-[#2a2723] text-white py-3 sm:py-4 rounded-xl sm:rounded-2xl font-black text-[10px] sm:text-[11px] uppercase tracking-[0.15em] hover:bg-[#5c1111] transition-all shadow-lg text-center">
                             Continue Journey
                         </Link>
@@ -226,12 +262,47 @@ export const CartPage = ({ cart, updateQty, remove, clearCart, currentUser, onOr
                                     <textarea required name="address" value={shippingDetails.address} onChange={handleInputChange} rows={2} placeholder="House no, Area, Ward no..." className="w-full pl-10 pr-4 py-3 bg-[#efece6] rounded-lg text-sm focus:ring-3 focus:ring-[#5c1111]/5 focus:bg-white outline-none transition-all resize-none font-medium text-[#2a2723]" />
                                 </div>
                             </div>
+                            <fieldset className="md:col-span-2 space-y-3">
+                                <legend className="text-[9px] font-black uppercase tracking-widest text-stone-400 pl-1">Payment amount</legend>
+                                <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${paymentType === 'full' ? 'border-[#5c1111] bg-white' : 'border-[#e5e1d8] bg-[#efece6]'}`}>
+                                    <input type="radio" name="paymentType" value="full" checked={paymentType === 'full'} onChange={() => setPaymentType('full')} className="mt-1 accent-[#5c1111]" />
+                                    <span className="flex-1">
+                                        <span className="block text-xs font-bold text-[#2a2723]">Pay in full</span>
+                                        <span className="block text-[11px] text-stone-500">Pay रु {total.toLocaleString()} now.</span>
+                                    </span>
+                                </label>
+                                <label className={`flex items-start gap-3 rounded-lg border p-3 ${canPayAdvance ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'} ${paymentType === 'advance' ? 'border-[#5c1111] bg-white' : 'border-[#e5e1d8] bg-[#efece6]'}`}>
+                                    <input type="radio" name="paymentType" value="advance" checked={paymentType === 'advance'} disabled={!canPayAdvance} onChange={() => setPaymentType('advance')} className="mt-1 accent-[#5c1111]" />
+                                    <span className="flex-1">
+                                        <span className="block text-xs font-bold text-[#2a2723]">Pay advance</span>
+                                        <span className="block text-[11px] text-stone-500">
+                                            {canPayAdvance
+                                                ? `Pay रु ${advanceAmount.toLocaleString()} now; pay the remaining balance from your profile dashboard.`
+                                                : 'Advance payment is unavailable because one or more products do not offer it.'}
+                                        </span>
+                                    </span>
+                                </label>
+                            </fieldset>
+                            <fieldset className="md:col-span-2">
+                                <legend className="mb-2 text-[9px] font-black uppercase tracking-widest text-stone-400 pl-1">Payment method</legend>
+                                <div className="grid grid-cols-2 gap-3">
+                                    {[
+                                        { id: 'esewa', label: 'eSewa' },
+                                        { id: 'khalti', label: 'Khalti' },
+                                    ].map((method) => (
+                                        <label key={method.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-xs font-bold ${paymentGateway === method.id ? 'border-[#5c1111] bg-white text-[#5c1111]' : 'border-[#e5e1d8] bg-[#efece6] text-stone-600'}`}>
+                                            <input type="radio" name="paymentGateway" value={method.id} checked={paymentGateway === method.id} onChange={() => setPaymentGateway(method.id)} className="accent-[#5c1111]" />
+                                            {method.label}
+                                        </label>
+                                    ))}
+                                </div>
+                            </fieldset>
                             <div className="md:col-span-2 pt-4">
-                                <button type="submit" className="w-full bg-[#5c1111] text-white py-3 sm:py-4 rounded-xl font-black text-[11px] uppercase tracking-[0.2em] shadow-lg hover:bg-[#2a2723] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3 active:scale-[0.98]">
-                                    <CreditCard size={16} /> Order Now रु {total.toLocaleString()}
+                                <button type="submit" disabled={isSubmitting || (paymentType === 'advance' && !canPayAdvance)} className="w-full bg-[#5c1111] text-white py-3 sm:py-4 rounded-xl font-black text-[11px] uppercase tracking-[0.2em] shadow-lg hover:bg-[#2a2723] hover:-translate-y-0.5 transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">
+                                    <CreditCard size={16} /> {isSubmitting ? 'Preparing secure payment...' : `Pay रु ${(paymentType === 'advance' ? advanceAmount : total).toLocaleString()} with ${paymentGateway === 'esewa' ? 'eSewa' : 'Khalti'}`}
                                 </button>
                                 <p className="text-center text-[10px] leading-relaxed text-stone-400">
-                                    We will contact you soon via your WhatsApp number.
+                                    Secure payment is verified by the gateway. Advance balances remain available in your profile dashboard.
                                 </p>
                                 {checkoutError && <p role="alert" className="text-center text-xs font-semibold text-red-300">{checkoutError}</p>}
                             </div>

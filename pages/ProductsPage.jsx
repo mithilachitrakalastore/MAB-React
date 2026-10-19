@@ -81,6 +81,22 @@ const productCategories = (value) => String(value || '')
     .map((category) => normalizeCategory(category))
     .filter(Boolean);
 
+const productAttributeValues = (value) => (Array.isArray(value) ? value : [value])
+    .flatMap((item) => String(item || '').split(','))
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+
+const productCollections = (product) => [...new Set([
+    ...productAttributeValues(product.collection),
+    ...productAttributeValues(product.collections),
+    ...productAttributeValues(product.collection_name),
+    ...productAttributeValues(product.category),
+].map(normalizeCategory).filter(Boolean))];
+
+const productTypes = (product) => [...new Set(productAttributeValues(product.product_type || product.type || product.category)
+    .map(normalizeCategory)
+    .filter(Boolean))];
+
 const categoryLabel = (category) => category
     .split('-')
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -147,7 +163,10 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
     const [assistantSearch, setAssistantSearch] = useState('');
     const [sort, setSort] = useState('featured');
     const [filterOpen, setFilterOpen] = useState(false);
+    const [isDesktop, setIsDesktop] = useState(false);
+    const [mobileFilterSection, setMobileFilterSection] = useState('collection');
     const [selectedStyles, setSelectedStyles] = useState([]);
+    const [selectedTypes, setSelectedTypes] = useState([]);
     const [priceLimit, setPriceLimit] = useState(null);
     const [savedCategories, setSavedCategories] = useState([]);
     const category = normalizeCategory(searchParams.get('cat') || 'all');
@@ -155,11 +174,34 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
 
     const maxPrice = useMemo(() => Math.max(10000, ...products.map((product) => Number(product.price) || 0)), [products]);
     const activePriceLimit = priceLimit ?? maxPrice;
+    const activeFilterCount = selectedTypes.length + selectedStyles.length + (selectedCategory !== 'all' ? 1 : 0) + (priceLimit !== null ? 1 : 0);
 
     useEffect(() => {
         setSearch(searchParams.get('q') || '');
         setAssistantSearch('');
     }, [searchParams]);
+
+    useEffect(() => {
+        const desktopQuery = window.matchMedia('(min-width: 1024px)');
+        const updateDesktopLayout = () => setIsDesktop(desktopQuery.matches);
+        updateDesktopLayout();
+        desktopQuery.addEventListener('change', updateDesktopLayout);
+        return () => desktopQuery.removeEventListener('change', updateDesktopLayout);
+    }, []);
+
+    useEffect(() => {
+        if (!filterOpen) return undefined;
+        const previousOverflow = document.body.style.overflow;
+        const closeOnEscape = (event) => {
+            if (event.key === 'Escape') setFilterOpen(false);
+        };
+        document.addEventListener('keydown', closeOnEscape);
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.removeEventListener('keydown', closeOnEscape);
+            document.body.style.overflow = previousOverflow;
+        };
+    }, [filterOpen]);
 
     useEffect(() => {
         let isMounted = true;
@@ -183,11 +225,18 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
             : [...current, styleKey]);
     };
 
+    const toggleType = (typeKey) => {
+        setSelectedTypes((current) => current.includes(typeKey)
+            ? current.filter((type) => type !== typeKey)
+            : [...current, typeKey]);
+    };
+
     const clearFilters = () => {
         setSearch('');
         setAssistantSearch('');
         setCategory('all');
         setSelectedStyles([]);
+        setSelectedTypes([]);
         setPriceLimit(null);
         setSort('featured');
     };
@@ -201,11 +250,19 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
     const categoryCounts = useMemo(() => {
         const counts = { all: products.length };
         products.forEach(p => {
-            productCategories(p.category).forEach((normalizedCategory) => {
+            productCollections(p).forEach((normalizedCategory) => {
                 counts[normalizedCategory] = (counts[normalizedCategory] || 0) + 1;
             });
         });
         return counts;
+    }, [products]);
+
+    const typeOptions = useMemo(() => {
+        const counts = new Map();
+        products.forEach((product) => {
+            productTypes(product).forEach((type) => counts.set(type, (counts.get(type) || 0) + 1));
+        });
+        return [...counts].map(([key, count]) => ({ key, label: categoryLabel(key), count }));
     }, [products]);
 
     const styleOptions = useMemo(() => {
@@ -231,7 +288,7 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
     const categoryOptions = useMemo(() => {
         const existingCategories = new Set([
             ...savedCategories.map((savedCategory) => normalizeCategory(savedCategory)),
-            ...products.flatMap((product) => productCategories(product.category)),
+            ...products.flatMap(productCollections),
         ]);
         const options = Object.entries(BASE_CATEGORY_LABELS);
         existingCategories.forEach((categoryKey) => {
@@ -254,13 +311,14 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
                 : String(p.name || '').toLowerCase().includes(q) ||
                     String(p.description || '').toLowerCase().includes(q) ||
                     String(p.storeName || '').toLowerCase().includes(q);
-            const matchesCategory = selectedCategory === 'all' || productCategories(p.category).includes(selectedCategory);
+            const matchesCategory = selectedCategory === 'all' || productCollections(p).includes(selectedCategory);
+            const matchesType = selectedTypes.length === 0 || selectedTypes.some((type) => productTypes(p).includes(type));
             const matchesStyle = selectedStyles.length === 0 || selectedStyles.some((styleKey) => {
                 const style = styleOptions.find((option) => option.key === styleKey);
                 return style?.terms.some((term) => productText.includes(term));
             });
             const matchesPrice = (Number(p.price) || 0) <= activePriceLimit;
-            return matchesSearch && matchesCategory && matchesStyle && matchesPrice;
+            return matchesSearch && matchesCategory && matchesType && matchesStyle && matchesPrice;
         });
         switch (sort) {
             case 'price-asc': return [...list].sort((a, b) => a.price - b.price);
@@ -273,50 +331,126 @@ export const ProductsPage = ({ products, addToCart, wishlist, toggleWishlist, cu
                 (b.featured === true) - (a.featured === true)
             );
         }
-    }, [products, search, assistantSearch, selectedCategory, selectedStyles, activePriceLimit, sort, currentUser?.gender]);
+    }, [products, search, assistantSearch, selectedCategory, selectedTypes, selectedStyles, activePriceLimit, sort, currentUser?.gender]);
 
     return (
-        <div className="min-h-screen bg-[#f5f1e9] pb-20 pt-[5.8rem] text-[#292621] sm:pb-28 sm:pt-[6.6rem]">
-            <section className="border-y border-[#ded7ca] bg-[#eee8dc]">
-                <div className="relative mx-auto flex min-h-[190px] max-w-[1280px] items-center overflow-hidden px-5 py-8 sm:min-h-[235px] sm:px-10 lg:px-14">
-                    <div className="relative z-10 max-w-md">
-                        <p className="mb-3 text-[9px] font-semibold uppercase tracking-[0.2em] text-[#7c2020]">Traditional Art · Handcrafted · From Mithila</p>
-                        <h1 className="font-playfair text-3xl font-bold leading-none text-[#292621] sm:text-5xl">Our Products</h1>
-                        <p className="mt-4 max-w-sm text-[11px] leading-relaxed text-[#71695e] sm:text-xs">Explore our collection of authentic Mithila art, handmade by skilled artisans from Janakpur. Each piece carries a story, a tradition and a piece of our cultural heritage.</p>
-                    </div>
-                    {products[0]?.image && <img src={products[0].image} alt="Mithila artwork" className="absolute -right-10 top-0 h-full w-[58%] object-cover object-left opacity-80 mix-blend-multiply sm:-right-4 sm:w-[46%]" />}
-                    <div className="absolute inset-y-0 right-0 w-2/3 bg-gradient-to-r from-[#eee8dc] via-[#eee8dc]/55 to-transparent" />
-                </div>
-            </section>
-
+        <div className="min-h-screen bg-[#f5f1e9] pb-20 pt-[4.5rem] text-[#292621] sm:pb-28 sm:pt-[5.2rem]">
             <div className="mx-auto max-w-[1280px] px-4 sm:px-8 lg:px-10">
-                <div className="flex items-center gap-2 py-4 text-[10px] text-[#81786d] sm:py-5"><span>Home</span><span>/</span><span className="text-[#292621]">Shop</span></div>
+                <div className="flex items-center gap-2 py-3 text-[10px] text-[#81786d] sm:py-4"><span>Home</span><span>/</span><span className="text-[#292621]">Shop</span></div>
                 {currentUser?.role === 'customer' && currentUser.gender && <p className="mb-4 text-xs text-[#71695e]">Recommendations are personalized to your shopping preference. You can still browse every product.</p>}
-                <div className="mb-5 flex items-center justify-between border-y border-[#ded7ca] py-3 sm:mb-7">
-                    <button type="button" onClick={() => setFilterOpen(!filterOpen)} className="inline-flex min-h-10 items-center gap-2 border border-[#cfc6b8] bg-[#fbf9f5] px-4 text-[10px] font-bold uppercase tracking-[0.16em] text-[#292621] lg:hidden"><Filter size={13} /> Filter</button>
-                    <p className="hidden text-[10px] text-[#81786d] sm:block">Showing <strong className="text-[#292621]">1–{filtered.length}</strong> of {products.length} products</p>
-                    <div className="ml-auto flex items-center gap-2 text-[10px] text-[#81786d]"><span>Sort by:</span><div className="relative"><select value={sort} onChange={(e) => setSort(e.target.value)} className="appearance-none bg-transparent py-2 pl-1 pr-6 font-semibold text-[#292621] outline-none"><option value="featured">Popularity</option>{SORT_OPTIONS.filter((option) => option.key !== 'featured').map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}</select><ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2" /></div></div>
+                <div className="mb-5 border-y border-[#ded7ca] py-2 sm:mb-7 sm:py-3">
+                    <div className="flex items-center justify-between gap-3">
+                        <p className="hidden text-[10px] text-[#81786d] sm:block">Showing <strong className="text-[#292621]">1–{filtered.length}</strong> of {products.length} products</p>
+                        <div className="flex w-full items-center justify-around text-[10px] sm:ml-auto sm:w-auto sm:justify-end sm:gap-2 sm:text-[#81786d]">
+                            <button type="button" onClick={() => setSort('featured')} className={`px-2 py-2 font-semibold sm:hidden ${sort === 'featured' ? 'text-[#7c2020]' : 'text-[#6f675e]'}`}>Best Match</button>
+                            <button type="button" onClick={() => setSort('rating')} className={`px-2 py-2 font-semibold sm:hidden ${sort === 'rating' ? 'text-[#7c2020]' : 'text-[#6f675e]'}`}>Top Rated</button>
+                            <button type="button" onClick={() => setSort(sort === 'price-asc' ? 'price-desc' : 'price-asc')} className={`inline-flex items-center gap-1 px-2 py-2 font-semibold sm:hidden ${sort.startsWith('price-') ? 'text-[#7c2020]' : 'text-[#6f675e]'}`}>Price<ChevronDown size={12} className={sort === 'price-asc' ? 'rotate-180' : ''} /></button>
+                            <div className="hidden items-center gap-2 text-[10px] text-[#81786d] sm:flex"><span>Sort by:</span><div className="relative"><select value={sort} onChange={(e) => setSort(e.target.value)} className="appearance-none bg-transparent py-2 pl-1 pr-6 font-semibold text-[#292621] outline-none"><option value="featured">Popularity</option>{SORT_OPTIONS.filter((option) => option.key !== 'featured').map(opt => <option key={opt.key} value={opt.key}>{opt.label}</option>)}</select><ChevronDown size={12} className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2" /></div></div>
+                        </div>
+                    </div>
+                    <div className="-mx-1 mt-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:hidden">
+                        <button type="button" onClick={() => setFilterOpen(true)} className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[#d9b7a8] bg-[#fff8f2] px-3 text-[10px] font-semibold text-[#7c2020]"><Filter size={13} /> Filter{activeFilterCount > 0 && <span className="ml-0.5">{activeFilterCount}</span>}<ChevronDown size={12} /></button>
+                        {categoryOptions.filter(([collection]) => collection !== 'all').map(([collection, label]) => <button key={collection} type="button" onClick={() => setCategory(selectedCategory === collection ? 'all' : collection)} className={`min-h-9 shrink-0 rounded-lg px-3 text-[10px] font-medium transition-colors ${selectedCategory === collection ? 'bg-[#7c2020] text-white' : 'bg-[#eeeae4] text-[#6f675e]'}`}>{label}</button>)}
+                    </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-7 lg:grid-cols-[185px_minmax(0,1fr)] lg:gap-8">
-                    <aside className={`${filterOpen ? 'block' : 'hidden'} lg:block`}>
-                        <div className="border border-[#e0d8cb] bg-[#fbf9f5] p-4 sm:p-5">
-                            <div className="mb-3 flex items-center justify-between"><h2 className="text-[10px] font-bold uppercase tracking-[0.16em]">Categories</h2><button type="button" className="lg:hidden" onClick={() => setFilterOpen(false)} aria-label="Close filters"><X size={15} /></button></div>
-                            <div className="space-y-1 border-t border-[#e6dfd4] pt-2">{categoryOptions.map(([cat, label]) => <button key={cat} onClick={() => { setCategory(cat); setFilterOpen(false); }} className={`flex w-full items-center justify-between border-b border-[#eee8df] py-2 text-left text-[10px] transition-colors ${selectedCategory === cat ? 'font-bold text-[#7c2020]' : 'text-[#6f675e] hover:text-[#7c2020]'}`}><span>{label}</span><span className="text-[8px] text-[#a39a8d]">({categoryCounts[cat] || 0})</span></button>)}</div>
-                            <div className="mt-6 border-t border-[#e6dfd4] pt-4"><h3 className="mb-3 text-[10px] font-bold uppercase tracking-[0.16em]">Price Range</h3><input type="range" min="0" max={maxPrice} step="100" value={activePriceLimit} onChange={(event) => setPriceLimit(Number(event.target.value))} className="h-1 w-full cursor-pointer accent-[#7c2020]" aria-label="Maximum price" /><div className="mt-2 flex justify-between text-[8px] text-[#81786d]"><span>Rs 0</span><span>{activePriceLimit >= maxPrice ? `Rs ${maxPrice.toLocaleString()}+` : `Up to Rs ${activePriceLimit.toLocaleString()}`}</span></div></div>
-                            <div className="mt-6 border-t border-[#e6dfd4] pt-4">
-                                <div className="mb-3 flex items-center justify-between"><h3 className="text-[10px] font-bold uppercase tracking-[0.16em]">Style / Theme</h3><span className="text-[8px] text-[#a39a8d]">Optional</span></div>
-                                <div className="space-y-1">{styleOptions.map((style) => {
+                <div className="grid grid-cols-1 gap-7 lg:grid-cols-[245px_minmax(0,1fr)] lg:items-start lg:gap-8">
+                {filterOpen && <button type="button" onClick={() => setFilterOpen(false)} className="fixed inset-0 z-[80] cursor-default bg-black/40 lg:hidden" aria-label="Close filters" />}
+                <aside
+                    aria-hidden={!filterOpen && !isDesktop}
+                    inert={!filterOpen && !isDesktop}
+                    className={`fixed inset-x-0 bottom-0 top-[12vh] z-[120] flex flex-col overflow-hidden rounded-t-2xl border border-[#e0d8cb] bg-white shadow-2xl transition-transform duration-300 ease-out lg:sticky lg:top-24 lg:z-auto lg:max-h-[calc(100vh-7rem)] lg:w-auto lg:translate-x-0 lg:translate-y-0 lg:rounded-xl lg:border lg:shadow-sm ${filterOpen ? 'translate-y-0' : 'translate-y-full'}`}
+                    aria-label="Product filters"
+                >
+                    <div className="flex items-center justify-between border-b border-[#e6dfd4] px-4 py-3 lg:px-5 lg:py-4">
+                        <div className="flex items-center gap-3">
+                            <span className="h-1 w-8 rounded-full bg-[#d8d2ca] lg:hidden" />
+                            <div>
+                                <h2 className="text-xs font-bold uppercase tracking-[0.16em]">Filters</h2>
+                                <p className="mt-1 text-[9px] text-[#81786d]">{filtered.length} products match</p>
+                            </div>
+                        </div>
+                        <button type="button" onClick={() => setFilterOpen(false)} className="rounded-full p-2 text-[#6f675e] hover:bg-[#eee8dc] lg:hidden" aria-label="Close filters"><X size={17} /></button>
+                    </div>
+                    <div className="flex min-h-0 flex-1">
+                        <nav className="w-[112px] shrink-0 overflow-y-auto bg-[#f5f5f5] py-1 sm:w-[145px] lg:hidden" aria-label="Filter sections">
+                            {[
+                                ['collection', 'Collection'],
+                                ['type', 'Product Type'],
+                                ['price', 'Price'],
+                                ['style', 'Style / Theme'],
+                            ].map(([key, label]) => <button key={key} type="button" onClick={() => setMobileFilterSection(key)} className={`relative w-full px-3 py-4 text-left text-[10px] leading-tight ${mobileFilterSection === key ? 'bg-white font-bold text-[#c75a25]' : 'text-[#6f675e]'}`}>{mobileFilterSection === key && <span className="absolute inset-y-0 left-0 w-1 bg-[#c75a25]" />}{label}</button>)}
+                        </nav>
+                        <div className="flex-1 space-y-6 overflow-y-auto px-4 py-4 lg:px-5">
+                        <section className={`lg:hidden ${mobileFilterSection === 'collection' ? '' : 'hidden'}`}>
+                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Collection</h3>
+                            <div className="grid grid-cols-2 gap-2">
+                                {categoryOptions.map(([collection, label]) => <button key={collection} type="button" onClick={() => setCategory(collection)} className={`min-h-10 rounded-md px-2 text-[10px] ${selectedCategory === collection ? 'border border-[#c75a25] bg-[#fff5ef] font-semibold text-[#c75a25]' : 'bg-[#f6f6f6] text-[#6f675e]'}`}>{label}<span className="ml-1 text-[8px] opacity-70">({categoryCounts[collection] || 0})</span></button>)}
+                            </div>
+                        </section>
+                        <section className={`lg:hidden ${mobileFilterSection === 'type' ? '' : 'hidden'}`}>
+                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Product Type</h3>
+                            <div className="grid grid-cols-2 gap-2">
+                                {typeOptions.map((type) => {
+                                    const isSelected = selectedTypes.includes(type.key);
+                                    return <button key={type.key} type="button" onClick={() => toggleType(type.key)} className={`min-h-10 rounded-md px-2 text-[10px] ${isSelected ? 'border border-[#c75a25] bg-[#fff5ef] font-semibold text-[#c75a25]' : 'bg-[#f6f6f6] text-[#6f675e]'}`}>{type.label}<span className="ml-1 text-[8px] opacity-70">({type.count})</span></button>;
+                                })}
+                            </div>
+                        </section>
+                        <section className={`lg:hidden ${mobileFilterSection === 'price' ? '' : 'hidden'}`}>
+                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Price</h3>
+                            <input type="range" min="0" max={maxPrice} step="100" value={activePriceLimit} onChange={(event) => setPriceLimit(Number(event.target.value))} className="h-1 w-full cursor-pointer accent-[#c75a25]" aria-label="Maximum price" />
+                            <div className="mt-2 flex justify-between text-[10px] text-[#81786d]"><span>Rs 0</span><span>{activePriceLimit >= maxPrice ? `Rs ${maxPrice.toLocaleString()}+` : `Up to Rs ${activePriceLimit.toLocaleString()}`}</span></div>
+                        </section>
+                        <section className={`lg:hidden ${mobileFilterSection === 'style' ? '' : 'hidden'}`}>
+                            <h3 className="mb-3 text-sm font-semibold text-[#292621]">Style / Theme</h3>
+                            <div className="grid grid-cols-2 gap-2">
+                                {styleOptions.map((style) => {
                                     const count = styleCounts[style.key] || 0;
                                     const isSelected = selectedStyles.includes(style.key);
-                                    return <label key={style.key} className={`flex items-center gap-3 border px-3 py-2.5 text-[10px] transition-colors ${count === 0 ? 'cursor-not-allowed border-transparent text-[#b8aea0]' : isSelected ? 'cursor-pointer border-[#d9b7a8] bg-[#f3e4db] font-bold text-[#7c2020]' : 'cursor-pointer border-transparent text-[#6f675e] hover:border-[#e6dfd4] hover:bg-white'}`}><input type="checkbox" checked={isSelected} onChange={() => toggleStyle(style.key)} disabled={count === 0} className="h-3.5 w-3.5 cursor-pointer accent-[#7c2020] disabled:cursor-not-allowed disabled:opacity-40" /><span className="flex-1">{style.label}</span><span className={`text-[8px] ${isSelected ? 'text-[#7c2020]' : 'text-[#a39a8d]'}`}>{count}</span></label>;
-                                })}</div>
+                                    return <button key={style.key} type="button" disabled={count === 0} onClick={() => toggleStyle(style.key)} className={`min-h-10 rounded-md px-2 text-[10px] disabled:opacity-40 ${isSelected ? 'border border-[#c75a25] bg-[#fff5ef] font-semibold text-[#c75a25]' : 'bg-[#f6f6f6] text-[#6f675e]'}`}>{style.label}<span className="ml-1 text-[8px] opacity-70">({count})</span></button>;
+                                })}
                             </div>
-                            <button type="button" onClick={clearFilters} className="mt-6 w-full bg-[#292621] py-3 text-[9px] font-bold uppercase tracking-[0.14em] text-white transition-colors hover:bg-[#7c2020]">Clear Filters</button>
+                        </section>
+                        <div className="hidden space-y-6 lg:block">
+                        <section>
+                            <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em]">Collection</h3>
+                            <div className="space-y-1 border-t border-[#e6dfd4] pt-2">
+                                {categoryOptions.map(([collection, label]) => <button key={collection} type="button" onClick={() => setCategory(collection)} className={`flex w-full items-center justify-between border-b border-[#eee8df] py-2 text-left text-[10px] transition-colors ${selectedCategory === collection ? 'font-bold text-[#7c2020]' : 'text-[#6f675e] hover:text-[#7c2020]'}`}><span>{label}</span><span className="text-[8px] text-[#a39a8d]">({categoryCounts[collection] || 0})</span></button>)}
+                            </div>
+                        </section>
+                        <section className="border-t border-[#e6dfd4] pt-4">
+                            <h3 className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em]">Product Type</h3>
+                            <div className="space-y-1">
+                                {typeOptions.map((type) => {
+                                    const isSelected = selectedTypes.includes(type.key);
+                                    return <label key={type.key} className={`flex items-center gap-3 border px-3 py-2.5 text-[10px] transition-colors ${isSelected ? 'cursor-pointer border-[#d9b7a8] bg-[#f3e4db] font-bold text-[#7c2020]' : 'cursor-pointer border-transparent text-[#6f675e] hover:border-[#e6dfd4] hover:bg-white'}`}><input type="checkbox" checked={isSelected} onChange={() => toggleType(type.key)} className="h-3.5 w-3.5 cursor-pointer accent-[#7c2020]" /><span className="flex-1">{type.label}</span><span className="text-[8px] text-[#a39a8d]">{type.count}</span></label>;
+                                })}
+                            </div>
+                        </section>
+                        <section className="border-t border-[#e6dfd4] pt-4">
+                            <h3 className="mb-3 text-[10px] font-bold uppercase tracking-[0.16em]">Price Range</h3>
+                            <input type="range" min="0" max={maxPrice} step="100" value={activePriceLimit} onChange={(event) => setPriceLimit(Number(event.target.value))} className="h-1 w-full cursor-pointer accent-[#7c2020]" aria-label="Maximum price" />
+                            <div className="mt-2 flex justify-between text-[8px] text-[#81786d]"><span>Rs 0</span><span>{activePriceLimit >= maxPrice ? `Rs ${maxPrice.toLocaleString()}+` : `Up to Rs ${activePriceLimit.toLocaleString()}`}</span></div>
+                        </section>
+                        <section className="border-t border-[#e6dfd4] pt-4">
+                            <div className="mb-3 flex items-center justify-between"><h3 className="text-[10px] font-bold uppercase tracking-[0.16em]">Style / Theme</h3><span className="text-[8px] text-[#a39a8d]">Optional</span></div>
+                            <div className="space-y-1">{styleOptions.map((style) => {
+                                const count = styleCounts[style.key] || 0;
+                                const isSelected = selectedStyles.includes(style.key);
+                                return <label key={style.key} className={`flex items-center gap-3 border px-3 py-2.5 text-[10px] transition-colors ${count === 0 ? 'cursor-not-allowed border-transparent text-[#b8aea0]' : isSelected ? 'cursor-pointer border-[#d9b7a8] bg-[#f3e4db] font-bold text-[#7c2020]' : 'cursor-pointer border-transparent text-[#6f675e] hover:border-[#e6dfd4] hover:bg-white'}`}><input type="checkbox" checked={isSelected} onChange={() => toggleStyle(style.key)} disabled={count === 0} className="h-3.5 w-3.5 cursor-pointer accent-[#7c2020] disabled:cursor-not-allowed disabled:opacity-40" /><span className="flex-1">{style.label}</span><span className={`text-[8px] ${isSelected ? 'text-[#7c2020]' : 'text-[#a39a8d]'}`}>{count}</span></label>;
+                            })}</div>
+                        </section>
                         </div>
-                    </aside>
+                    </div>
+                    </div>
+                    <div className="flex gap-2 border-t border-[#e6dfd4] bg-white p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:p-4">
+                        <button type="button" onClick={clearFilters} className="flex-1 rounded-md border border-[#cfc6b8] py-3 text-[10px] font-semibold text-[#6f675e] transition-colors hover:border-[#7c2020] hover:text-[#7c2020] lg:text-[9px] lg:font-bold lg:uppercase lg:tracking-[0.14em]">Reset</button>
+                        <button type="button" onClick={() => setFilterOpen(false)} className="flex-1 rounded-md bg-[#ee5b0b] py-2 text-[10px] font-semibold text-white transition-colors hover:bg-[#d84e06] lg:bg-[#7c2020] lg:py-3 lg:text-[9px] lg:font-bold lg:uppercase lg:tracking-[0.14em] lg:hover:bg-[#5c1111]">Done <span className="block text-[9px] font-normal lg:hidden">{filtered.length} Products</span><span className="hidden lg:inline"> {filtered.length} Products</span></button>
+                    </div>
+                </aside>
 
-                    <main>
+                <main>
                         <div className="mb-4 flex items-center justify-between gap-3">
                             <p className="text-[10px] text-[#81786d] sm:hidden">{filtered.length} {filtered.length === 1 ? 'piece' : 'pieces'}</p>
                             <form onSubmit={handleAssistantSearch} className="ml-auto flex w-full max-w-[430px] items-center gap-2">

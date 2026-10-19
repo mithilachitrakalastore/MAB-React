@@ -14,7 +14,7 @@ export const BottomNav = ({ currentUser }) => {
     ];
 
     return (
-        <div className="fixed bottom-2 left-2 right-2 z-[110] bg-white/30 backdrop-blur-sm border border-white/10 rounded-full p-6 shadow-xl px-4 py-2 pb-5 backdrop-blur-lg lg:hidden print:hidden">
+        <div className="fixed bottom-2 left-2 right-2 z-[110] bg-white/30 backdrop-blur-sm border border-white/10 rounded-full p-6 shadow-xl px-4 py-2 pb-2 backdrop-blur-lg lg:hidden print:hidden">
             <div className="mx-auto flex max-w-lg items-center justify-between">
                 {navItems.map((item) => {
                     const isActive =

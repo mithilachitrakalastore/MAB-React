@@ -136,6 +136,10 @@ const normalizeProductData = (productData = {}) => {
     const customTags = Array.isArray(productData.custom_tags)
         ? productData.custom_tags
         : toTagList(productData.custom_tags || productData.tags || '');
+    const advancePercentage = Number(productData.advance_percentage ?? 0);
+    if (!Number.isFinite(advancePercentage) || advancePercentage < 0 || advancePercentage > 100) {
+        throw new Error('Advance payment percentage must be between 0 and 100.');
+    }
 
     return {
         ...productData,
@@ -147,6 +151,7 @@ const normalizeProductData = (productData = {}) => {
         custom_tags: customTags.join(' · '),
         visible_to_users: Boolean(productData.visible_to_users),
         price: Number(productData.price ?? 0) || 0,
+        advance_percentage: advancePercentage,
         stock: Number(productData.stock ?? 0) || 0,
         tags: Array.isArray(productData.tags)
             ? productData.tags.join(', ')
@@ -161,6 +166,24 @@ const getFrontendBaseUrl = (req) => {
         return 'https://mithilachitrakalastore.com.np';
     }
     return `${req.protocol}://${req.get('host')}`.replace(/\/+$/, '');
+};
+
+const getPaymentCallbackBaseUrl = (req) => (
+    process.env.PUBLIC_API_URL || `${req.protocol}://${req.get('host')}`
+).replace(/\/+$/, '');
+
+const getKhaltiApiBaseUrl = () => (
+    process.env.KHALTI_BASE_URL || 'https://a.khalti.com/api/v2'
+).replace(/\/+$/, '');
+
+const getEsewaCredentials = () => {
+    const isProduction = process.env.NODE_ENV === 'production';
+    const productCode = process.env.ESEWA_PRODUCT_CODE || process.env.PRODUCT_CODE || (isProduction ? '' : 'EPAYTEST');
+    const secretKey = process.env.ESEWA_SECRET_KEY || (isProduction ? '' : '8gBm/:&EnhH.1/q');
+    if (!productCode || !secretKey) {
+        throw new Error('eSewa is not configured on the server. Set ESEWA_PRODUCT_CODE and ESEWA_SECRET_KEY.');
+    }
+    return { productCode, secretKey };
 };
 
 const escapeHtml = (value = '') => String(value ?? '')
@@ -1435,6 +1458,45 @@ app.post('/api/db', async (req, res) => {
             }
             case 'saveOrder': {
                 const { order } = payload;
+                if (!['advance', 'full'].includes(order?.payment_type)) {
+                    throw new Error('Choose full payment or advance payment before placing the order.');
+                }
+                const orderItems = Array.isArray(order.items) ? order.items : [];
+                if (orderItems.length === 0) throw new Error('An order must contain at least one product.');
+                const productIds = [...new Set(orderItems.map((item) => String(item.id || '').trim()).filter(Boolean))];
+                if (productIds.length !== orderItems.length) {
+                    throw new Error('Order products must have valid, unique product IDs.');
+                }
+                const { data: products, error: productsError } = await supabase
+                    .from('products')
+                    .select('id, price, advance_percentage, seller_id')
+                    .in('id', productIds);
+                if (productsError) throw new Error(productsError.message);
+                if (products.length !== productIds.length || products.some((product) => String(product.seller_id) !== String(order.seller_id))) {
+                    throw new Error('One or more products are no longer available from this seller.');
+                }
+
+                const productsById = new Map(products.map((product) => [String(product.id), product]));
+                const pricedItems = orderItems.map((item) => {
+                    const product = productsById.get(String(item.id));
+                    const quantity = Number(item.quantity);
+                    const price = Number(product.price);
+                    const advancePercentage = Number(product.advance_percentage || 0);
+                    if (!Number.isInteger(quantity) || quantity < 1 || !Number.isFinite(price) || price < 0) {
+                        throw new Error('Order contains an invalid product quantity or price.');
+                    }
+                    return { ...item, price, quantity, advance_percentage: advancePercentage };
+                });
+                const subtotal = pricedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+                const shippingFee = subtotal > 5000 ? 0 : 250;
+                const total = subtotal + shippingFee;
+                const advanceDueAmount = Math.min(total, Math.round(pricedItems.reduce(
+                    (sum, item) => sum + item.price * item.quantity * item.advance_percentage / 100,
+                    0
+                ) * 100) / 100);
+                if (order.payment_type === 'advance' && advanceDueAmount <= 0) {
+                    throw new Error('Advance payment is not available for these products.');
+                }
                 const { data: configData, error: configError } = await supabase
                     .from('app_config')
                     .select('globalCommission')
@@ -1445,8 +1507,8 @@ app.post('/api/db', async (req, res) => {
                 if (!Number.isFinite(perc) || perc < 0 || perc > 100) {
                     throw new Error('The configured commission rate is invalid.');
                 }
-                const commAmt = (order.total * perc) / 100;
-                const sellerAmt = order.total - commAmt;
+                const commAmt = (total * perc) / 100;
+                const sellerAmt = total - commAmt;
 
                 const now = new Date();
                 const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
@@ -1456,6 +1518,15 @@ app.post('/api/db', async (req, res) => {
 
                 const orderData = {
                     ...order,
+                    items: pricedItems,
+                    subtotal,
+                    shipping_fee: shippingFee,
+                    total,
+                    advance_due_amount: advanceDueAmount,
+                    amount_paid: 0,
+                    payment_gateway: null,
+                    customer_payment_status: 'pending',
+                    customer_payment_verified: false,
                     invoice_no: invoiceNo,
                     tracking_id: trackingId,
                     commission_percentage: perc,
@@ -1468,7 +1539,7 @@ app.post('/api/db', async (req, res) => {
                 if (error) throw new Error(error.message);
                 result = data[0];
 
-                if (result?.customer?.email || result?.customer_email) {
+                if (!result.payment_type && (result?.customer?.email || result?.customer_email)) {
                     try {
                         await sendOrderConfirmationEmail({
                             to: result.customer?.email || result.customer_email,
@@ -1483,7 +1554,11 @@ app.post('/api/db', async (req, res) => {
             }
             case 'updateOrderStatus': {
                 const { id, status, role, userId } = payload;
-                const previousOrder = id ? await supabase.from('orders').select('*').eq('id', id).maybeSingle() : { data: null };
+                const previousOrder = id ? await supabase.from('orders').select('status, amount_paid').eq('id', id).maybeSingle() : { data: null };
+                if (previousOrder?.error) throw new Error(previousOrder.error.message);
+                if (status === 'cancelled' && Number(previousOrder?.data?.amount_paid || 0) > 0) {
+                    throw new Error('An order with a recorded payment cannot be cancelled here. Contact support for help.');
+                }
                 const previousStatus = previousOrder?.data?.status || 'pending';
                 let updateData = { status };
                 if (status === 'cancelled') {
@@ -2142,6 +2217,263 @@ app.post('/api/email/test', async (req, res) => {
     } catch (error) {
         console.error('Email test endpoint error:', error);
         return res.status(500).json({ error: error.message || 'Unable to send the email test.' });
+    }
+});
+
+const sendPaidOrderConfirmation = async (order) => {
+    const recipient = order.customer?.email || order.customer_email;
+    if (!recipient) return;
+    try {
+        await sendOrderConfirmationEmail({
+            to: recipient,
+            name: order.customer?.name || 'Customer',
+            order,
+        });
+    } catch (error) {
+        console.error('Paid order confirmation email failed:', error.message || error);
+    }
+};
+
+app.post('/api/payments/start', async (req, res) => {
+    let paymentSessionId;
+    try {
+        const { orderIds, userId, gateway, paymentType } = req.body || {};
+        const requestedOrderIds = [...new Set((Array.isArray(orderIds) ? orderIds : [])
+            .map((id) => String(id || '').trim())
+            .filter(Boolean))];
+        if (!userId || requestedOrderIds.length === 0 || requestedOrderIds.length > 50) {
+            return res.status(400).json({ error: 'A customer and at least one order are required.' });
+        }
+        if (!['esewa', 'khalti'].includes(gateway)) {
+            return res.status(400).json({ error: 'Choose eSewa or Khalti.' });
+        }
+        if (!['advance', 'full', 'balance'].includes(paymentType)) {
+            return res.status(400).json({ error: 'Choose advance, full, or remaining balance payment.' });
+        }
+
+        const { data: orders, error: orderError } = await supabase
+            .from('orders')
+            .select('id, customer_id, total, amount_paid, advance_due_amount, payment_type, status, customer')
+            .in('id', requestedOrderIds)
+            .eq('customer_id', String(userId));
+        if (orderError) throw new Error(orderError.message);
+        if (orders.length !== requestedOrderIds.length) {
+            return res.status(404).json({ error: 'One or more orders could not be found for this account.' });
+        }
+
+        const allocations = orders.map((order) => {
+            if (order.status === 'cancelled') throw new Error(`Order ${order.id} has been cancelled.`);
+            const total = Number(order.total);
+            const paid = Number(order.amount_paid || 0);
+            if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(paid) || paid < 0) {
+                throw new Error(`Order ${order.id} has an invalid payment balance.`);
+            }
+            if (paymentType !== 'balance' && order.payment_type !== paymentType) {
+                throw new Error(`Order ${order.id} is not eligible for this payment option.`);
+            }
+
+            let amount = total - paid;
+            if (paymentType === 'advance') amount = Number(order.advance_due_amount || 0) - paid;
+            amount = Math.round(Math.min(amount, total - paid) * 100) / 100;
+            if (!Number.isFinite(amount) || amount <= 0) {
+                throw new Error(`Order ${order.id} has no amount due for this payment option.`);
+            }
+            return { order_id: order.id, amount: amount.toFixed(2) };
+        });
+        const paymentAmount = Math.round(allocations.reduce((sum, item) => sum + Number(item.amount), 0) * 100) / 100;
+        const { data: session, error: sessionError } = await supabase
+            .from('payment_sessions')
+            .insert([{
+                customer_id: String(userId),
+                order_allocations: allocations,
+                amount: paymentAmount,
+                gateway,
+                payment_type: paymentType,
+            }])
+            .select()
+            .single();
+        if (sessionError) throw new Error(sessionError.message);
+        paymentSessionId = session.id;
+        const { error: paymentMethodError } = await supabase
+            .from('orders')
+            .update({ payment_gateway: gateway })
+            .in('id', requestedOrderIds)
+            .eq('customer_id', String(userId));
+        if (paymentMethodError) throw new Error(paymentMethodError.message);
+
+        const frontendUrl = getFrontendBaseUrl(req);
+        const callbackUrl = getPaymentCallbackBaseUrl(req);
+        if (gateway === 'khalti') {
+            if (!process.env.KHALTI_SECRET_KEY) throw new Error('Khalti is not configured on the server.');
+            const khaltiResponse = await fetch(`${getKhaltiApiBaseUrl()}/epayment/initiate/`, {
+                method: 'POST',
+                headers: {
+                    Authorization: `Key ${process.env.KHALTI_SECRET_KEY}`,
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    return_url: `${callbackUrl}/api/payments/khalti/return`,
+                    website_url: frontendUrl,
+                    amount: Math.round(paymentAmount * 100),
+                    purchase_order_id: session.id,
+                    purchase_order_name: `Mithila order ${requestedOrderIds.join(', ')}`,
+                    customer_info: {
+                        name: orders[0].customer?.name || 'Customer',
+                        email: orders[0].customer?.email || '',
+                        phone: orders[0].customer?.phone || '',
+                    },
+                }),
+            });
+            const khaltiData = await khaltiResponse.json().catch(() => ({}));
+            if (!khaltiResponse.ok || !khaltiData.payment_url || !khaltiData.pidx) {
+                throw new Error(khaltiData.detail || khaltiData.error_key || 'Khalti could not create a payment session.');
+            }
+            const { error: updateError } = await supabase
+                .from('payment_sessions')
+                .update({ provider_reference: khaltiData.pidx })
+                .eq('id', session.id);
+            if (updateError) throw new Error(updateError.message);
+            return res.json({ gateway, paymentUrl: khaltiData.payment_url });
+        }
+
+        const { productCode, secretKey } = getEsewaCredentials();
+        const amount = paymentAmount.toFixed(2);
+        const signedFieldNames = 'total_amount,transaction_uuid,product_code';
+        const signature = crypto.createHmac('sha256', secretKey)
+            .update(`total_amount=${amount},transaction_uuid=${session.id},product_code=${productCode}`)
+            .digest('base64');
+        const esewaBaseUrl = (process.env.ESEWA_BASE_URL || 'https://rc-epay.esewa.com.np').replace(/\/+$/, '');
+        const returnUrl = `${callbackUrl}/api/payments/esewa/return`;
+        return res.json({
+            gateway,
+            paymentUrl: `${esewaBaseUrl}/api/epay/main/v2/form`,
+            fields: {
+                amount,
+                tax_amount: '0',
+                total_amount: amount,
+                transaction_uuid: session.id,
+                product_code: productCode,
+                product_service_charge: '0',
+                product_delivery_charge: '0',
+                success_url: returnUrl,
+                failure_url: returnUrl,
+                signed_field_names: signedFieldNames,
+                signature,
+            },
+        });
+    } catch (error) {
+        if (paymentSessionId) {
+            const { error: updateError } = await supabase
+                .from('payment_sessions')
+                .update({ status: 'failed' })
+                .eq('id', paymentSessionId);
+            if (updateError) console.error('Failed to mark payment session as failed:', updateError.message);
+        }
+        console.error('Payment initiation failed:', error);
+        return res.status(502).json({ error: error.message || 'Unable to start payment.' });
+    }
+});
+
+app.get('/api/payments/khalti/return', async (req, res) => {
+    const frontendUrl = getFrontendBaseUrl(req);
+    try {
+        const pidx = String(req.query.pidx || '');
+        const sessionId = String(req.query.purchase_order_id || '');
+        if (!pidx || !sessionId || !process.env.KHALTI_SECRET_KEY) {
+            return res.redirect(`${frontendUrl}/profile?payment=failed`);
+        }
+        const { data: session, error: sessionError } = await supabase
+            .from('payment_sessions')
+            .select('id, amount, gateway, provider_reference, payment_type, order_allocations, status')
+            .eq('id', sessionId)
+            .maybeSingle();
+        if (sessionError) throw new Error(sessionError.message);
+        if (!session || session.gateway !== 'khalti' || session.provider_reference !== pidx) {
+            return res.redirect(`${frontendUrl}/profile?payment=failed`);
+        }
+        const lookupResponse = await fetch(`${getKhaltiApiBaseUrl()}/epayment/lookup/`, {
+            method: 'POST',
+            headers: {
+                Authorization: `Key ${process.env.KHALTI_SECRET_KEY}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ pidx }),
+        });
+        const lookup = await lookupResponse.json().catch(() => ({}));
+        if (!lookupResponse.ok || lookup.status !== 'Completed' ||
+            Number(lookup.total_amount) !== Math.round(Number(session.amount) * 100) ||
+            (lookup.purchase_order_id && lookup.purchase_order_id !== session.id)) {
+            return res.redirect(`${frontendUrl}/profile?payment=failed`);
+        }
+        const { error: completionError } = await supabase.rpc('complete_payment_session', {
+            session_id: session.id,
+            gateway_reference: pidx,
+        });
+        if (completionError) throw new Error(completionError.message);
+        if (session.payment_type !== 'balance' && session.status !== 'completed') {
+            const orderIds = session.order_allocations.map((allocation) => allocation.order_id);
+            const { data: paidOrders, error: paidOrdersError } = await supabase.from('orders').select('*').in('id', orderIds);
+            if (paidOrdersError) throw new Error(paidOrdersError.message);
+            for (const order of paidOrders) await sendPaidOrderConfirmation(order);
+        }
+        return res.redirect(`${frontendUrl}/profile?payment=success`);
+    } catch (error) {
+        console.error('Khalti payment verification failed:', error);
+        return res.redirect(`${frontendUrl}/profile?payment=failed`);
+    }
+});
+
+app.get('/api/payments/esewa/return', async (req, res) => {
+    const frontendUrl = getFrontendBaseUrl(req);
+    try {
+        if (!req.query.data) {
+            return res.redirect(`${frontendUrl}/profile?payment=failed`);
+        }
+        const { productCode, secretKey } = getEsewaCredentials();
+        const responseData = JSON.parse(Buffer.from(String(req.query.data), 'base64').toString('utf8'));
+        const sessionId = String(responseData.transaction_uuid || '');
+        if (!sessionId || responseData.product_code !== productCode) {
+            return res.redirect(`${frontendUrl}/profile?payment=failed`);
+        }
+        const { data: session, error: sessionError } = await supabase
+            .from('payment_sessions')
+            .select('id, amount, gateway, payment_type, order_allocations, status')
+            .eq('id', sessionId)
+            .maybeSingle();
+        if (sessionError) throw new Error(sessionError.message);
+        if (!session || session.gateway !== 'esewa') {
+            return res.redirect(`${frontendUrl}/profile?payment=failed`);
+        }
+
+        const esewaBaseUrl = (process.env.ESEWA_BASE_URL || 'https://rc-epay.esewa.com.np').replace(/\/+$/, '');
+        const statusUrl = new URL(`${esewaBaseUrl}/api/epay/transaction/status/`);
+        statusUrl.search = new URLSearchParams({
+            product_code: productCode,
+            total_amount: Number(session.amount).toFixed(2),
+            transaction_uuid: session.id,
+        }).toString();
+        const statusResponse = await fetch(statusUrl);
+        const statusData = await statusResponse.json().catch(() => ({}));
+        if (!statusResponse.ok || statusData.status !== 'COMPLETE' ||
+            Number.parseFloat(String(statusData.total_amount).replace(/[^\d.]/g, '')) !== Number(session.amount) ||
+            (statusData.transaction_uuid && statusData.transaction_uuid !== session.id)) {
+            return res.redirect(`${frontendUrl}/profile?payment=failed`);
+        }
+        const { error: completionError } = await supabase.rpc('complete_payment_session', {
+            session_id: session.id,
+            gateway_reference: String(responseData.transaction_code || responseData.refId || session.id),
+        });
+        if (completionError) throw new Error(completionError.message);
+        if (session.payment_type !== 'balance' && session.status !== 'completed') {
+            const orderIds = session.order_allocations.map((allocation) => allocation.order_id);
+            const { data: paidOrders, error: paidOrdersError } = await supabase.from('orders').select('*').in('id', orderIds);
+            if (paidOrdersError) throw new Error(paidOrdersError.message);
+            for (const order of paidOrders) await sendPaidOrderConfirmation(order);
+        }
+        return res.redirect(`${frontendUrl}/profile?payment=success`);
+    } catch (error) {
+        console.error('eSewa payment verification failed:', error);
+        return res.redirect(`${frontendUrl}/profile?payment=failed`);
     }
 });
 

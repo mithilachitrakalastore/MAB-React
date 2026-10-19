@@ -84,6 +84,16 @@ export const dbService = {
     getOrders: (sellerId, customerId) => callDbService('getOrders', { sellerId, customerId }),
     getPublicInvoices: (invoiceNumbers) => callDbService('getPublicInvoices', { invoiceNumbers }),
     saveOrder: (order) => callDbService('saveOrder', { order }),
+    startPayment: async (orderIds, userId, gateway, paymentType) => {
+        const response = await fetch(`${API_BASE_URL}/payments/start`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderIds, userId, gateway, paymentType }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || `Server returned ${response.status}`);
+        return data;
+    },
     updateOrderStatus: (id, status, role, userId) => callDbService('updateOrderStatus', { id, status, role, userId }),
     updateOrderDetails: (orderId, customer, userId) => callDbService('updateOrderDetails', { orderId, customer, userId }),
     confirmPayout: (orderId, adminId) => callDbService('confirmPayout', { orderId, adminId }),
