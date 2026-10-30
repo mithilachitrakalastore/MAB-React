@@ -17,6 +17,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 10000;
 const APP_NAME = 'Mithila Chitrakala Store';
+const PUBLIC_SITE_URL = (process.env.PUBLIC_FRONTEND_URL || process.env.VITE_APP_URL || 'https://mithilachitrakalastore.com.np').replace(/\/+$/, '');
 const EMAIL_SENDERS = {
     hello: process.env.EMAIL_HELLO || 'hello@mithilachitrakalastore.com.np',
     orders: process.env.EMAIL_ORDERS || 'orders@mithilachitrakalastore.com.np',
@@ -2478,6 +2479,34 @@ app.get('/api/payments/esewa/return', async (req, res) => {
     }
 });
 
+app.get('/sitemap.xml', async (req, res) => {
+    try {
+        const { data: products, error } = await supabase
+            .from('products')
+            .select('slug')
+            .not('slug', 'is', null);
+
+        if (error) throw error;
+
+        const staticPaths = ['/', '/products', '/journal', '/advice'];
+        const productPaths = [...new Set((products || [])
+            .map((product) => String(product.slug || '').trim())
+            .filter(Boolean))]
+            .map((slug) => `/product/${encodeURIComponent(slug)}`);
+        const urls = [...staticPaths, ...productPaths]
+            .map((route) => `  <url><loc>${PUBLIC_SITE_URL}${route}</loc></url>`)
+            .join('\n');
+
+        res
+            .set('Content-Type', 'application/xml; charset=utf-8')
+            .set('Cache-Control', 'public, max-age=3600')
+            .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>`);
+    } catch (error) {
+        console.error('Sitemap generation failed:', error);
+        res.status(503).type('text/plain').send('Sitemap is temporarily unavailable.');
+    }
+});
+
 app.use(express.static(path.join(__dirname, 'dist')));
 
 const escapeHtmlAttribute = (value) => String(value || '')
@@ -2613,7 +2642,7 @@ app.get('/product/:slug', async (req, res, next) => {
     try {
         const { data: product, error } = await supabase
             .from('products')
-            .select('name, description, image, slug')
+            .select('name, description, image, slug, price, stock')
             .eq('slug', req.params.slug)
             .maybeSingle();
 
@@ -2621,25 +2650,54 @@ app.get('/product/:slug', async (req, res, next) => {
 
         const title = `${product.name} | Mithila Chitrakala Store`;
         const description = product.description || `Discover ${product.name} at Mithila Chitrakala Store.`;
-        const pageUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+        const pageUrl = `${PUBLIC_SITE_URL}/product/${encodeURIComponent(product.slug)}`;
         let html = fs.readFileSync(path.join(__dirname, 'dist', 'index.html'), 'utf8');
         const shareImage = buildProductShareImageUrl(product);
         const replaceMetaContent = (selector, content) => {
             const pattern = new RegExp(`(<meta\\s+${selector}\\s+content=")[^"]*("\\s*/?>)`, 'i');
             html = html.replace(pattern, `$1${escapeHtmlAttribute(content)}$2`);
         };
+        const price = Number(product.price);
+        const productStructuredData = {
+            '@context': 'https://schema.org',
+            '@type': 'Product',
+            name: product.name,
+            description,
+            image: shareImage,
+            url: pageUrl,
+        };
+        if (Number.isFinite(price) && price >= 0) {
+            productStructuredData.offers = {
+                '@type': 'Offer',
+                url: pageUrl,
+                priceCurrency: 'NPR',
+                price: price.toFixed(2),
+                availability: Number(product.stock) > 0
+                    ? 'https://schema.org/InStock'
+                    : 'https://schema.org/OutOfStock',
+                seller: { '@type': 'Organization', name: APP_NAME },
+            };
+        }
+        const serializedStructuredData = JSON.stringify(productStructuredData).replace(/</g, '\\u003c');
 
         html = html.replace(/<title>[^<]*<\/title>/i, `<title>${escapeHtmlAttribute(title)}</title>`);
         replaceMetaContent('name="description"', description);
         replaceMetaContent('property="og:title"', title);
         replaceMetaContent('property="og:description"', description);
+        replaceMetaContent('property="og:type"', 'product');
         replaceMetaContent('property="og:url"', pageUrl);
         replaceMetaContent('property="og:image"', shareImage);
         replaceMetaContent('name="twitter:title"', title);
         replaceMetaContent('name="twitter:description"', description);
         replaceMetaContent('name="twitter:image"', shareImage);
         html = html.replace('</head>', `${shareImageMetadata(shareImage)}\n</head>`);
-        html = html.replace('</head>', `<link rel="canonical" href="${escapeHtmlAttribute(pageUrl)}">\n</head>`);
+        const canonicalPattern = /<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i;
+        if (canonicalPattern.test(html)) {
+            html = html.replace(canonicalPattern, `<link rel="canonical" href="${escapeHtmlAttribute(pageUrl)}">`);
+        } else {
+            html = html.replace('</head>', `<link rel="canonical" href="${escapeHtmlAttribute(pageUrl)}">\n</head>`);
+        }
+        html = html.replace('</head>', `<script type="application/ld+json">${serializedStructuredData}</script>\n</head>`);
         res.send(html);
     } catch (error) {
         next(error);
